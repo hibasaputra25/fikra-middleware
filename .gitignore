@@ -1,0 +1,5 @@
+# Dependency (File library yang berat, nanti di-install ulang pakai npm install)
+node_modules/
+
+# Environment Variables (Rahasianya ada di sini!)
+.env
