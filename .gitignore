@@ -3,3 +3,7 @@ node_modules/
 
 # Environment Variables (Rahasianya ada di sini!)
 .env
+
+# Moodle backup & database dumps (jangan di-push)
+*.mbz
+*.sql
