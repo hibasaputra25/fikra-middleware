@@ -22,16 +22,22 @@ export default function Navbar({ items, accent = "primary" }: NavbarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
 
-  const accentColors = {
-    primary: "border-primary",
-    secondary: "border-secondary",
-    admin: "border-admin-accent",
-  };
-
   const activeTextColors = {
     primary: "text-primary",
     secondary: "text-secondary",
-    admin: "text-admin-accent",
+    admin: "text-text-primary",
+  };
+
+  const activeBgColors = {
+    primary: "bg-primary-light",
+    secondary: "bg-secondary-light",
+    admin: "bg-ink/[0.06]",
+  };
+
+  const avatarColors = {
+    primary: "bg-primary",
+    secondary: "bg-secondary",
+    admin: "bg-ink",
   };
 
   const handleLogout = () => {
@@ -40,15 +46,15 @@ export default function Navbar({ items, accent = "primary" }: NavbarProps) {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-bg-card border-b border-border">
+    <header className="sticky top-0 z-50 bg-bg-card/85 backdrop-blur-md border-b border-border">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-14">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 shrink-0">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+          <Link href="/" className="flex items-center gap-2.5 shrink-0">
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shadow-sm">
               <span className="text-white font-bold text-sm">FA</span>
             </div>
-            <span className="text-base font-semibold text-text-primary hidden sm:block">
+            <span className="text-base font-semibold tracking-tight text-text-primary hidden sm:block">
               Fikra Academy
             </span>
           </Link>
@@ -62,10 +68,10 @@ export default function Navbar({ items, accent = "primary" }: NavbarProps) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "px-3 py-2 text-sm rounded-md transition-colors",
+                    "px-3.5 py-2 text-sm rounded-full transition-colors",
                     isActive
-                      ? cn("font-medium", activeTextColors[accent])
-                      : "text-text-secondary hover:text-text-primary hover:bg-gray-50"
+                      ? cn("font-semibold", activeTextColors[accent], activeBgColors[accent])
+                      : "text-text-secondary hover:text-text-primary hover:bg-ink/[0.04]"
                   )}
                 >
                   {item.label}
@@ -75,18 +81,18 @@ export default function Navbar({ items, accent = "primary" }: NavbarProps) {
           </nav>
 
           {/* User Menu */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {user && (
-              <div className="hidden sm:flex items-center gap-2">
-                <div className="w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center">
-                  <User className="w-4 h-4 text-text-secondary" />
+              <div className="hidden sm:flex items-center gap-2.5 pl-1">
+                <div className={cn("w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold", avatarColors[accent])}>
+                  {user.nama?.[0]?.toUpperCase() || <User className="w-4 h-4" />}
                 </div>
-                <span className="text-sm text-text-secondary">{user.nama}</span>
+                <span className="text-sm font-medium text-text-primary max-w-[140px] truncate">{user.nama}</span>
               </div>
             )}
             <button
               onClick={handleLogout}
-              className="p-2 text-text-muted hover:text-text-primary rounded-md hover:bg-gray-50 transition-colors"
+              className="p-2 text-text-muted hover:text-danger rounded-full hover:bg-ink/[0.04] transition-colors"
               title="Keluar"
               aria-label="Keluar"
             >
@@ -117,10 +123,10 @@ export default function Navbar({ items, accent = "primary" }: NavbarProps) {
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
                   className={cn(
-                    "block px-3 py-2.5 text-sm rounded-md transition-colors",
+                    "block px-3 py-2.5 text-sm rounded-lg transition-colors",
                     isActive
-                      ? cn("font-medium", activeTextColors[accent])
-                      : "text-text-secondary hover:text-text-primary hover:bg-gray-50"
+                      ? cn("font-semibold", activeTextColors[accent], activeBgColors[accent])
+                      : "text-text-secondary hover:text-text-primary hover:bg-ink/[0.04]"
                   )}
                 >
                   {item.label}

@@ -15,7 +15,7 @@ export default function StatCard({ label, value, icon: Icon, trend, className }:
     <Card className={cn("flex items-start justify-between", className)}>
       <div>
         <p className="text-sm text-text-secondary">{label}</p>
-        <p className="text-2xl font-semibold text-text-primary mt-1">{value}</p>
+        <p className="font-display text-3xl font-semibold text-text-primary mt-1 tracking-tight">{value}</p>
         {trend && (
           <p
             className={cn(

@@ -65,7 +65,7 @@ export default function SiswaDashboard() {
     <Container>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-text-primary">
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-text-primary">
           Hai, {user?.nama?.split(" ")[0]} 👋
         </h1>
         <p className="text-sm text-text-secondary mt-1">

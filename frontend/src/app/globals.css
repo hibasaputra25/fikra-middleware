@@ -1,28 +1,43 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-primary: #01c058;
-  --color-primary-hover: #00a94d;
-  --color-primary-light: #f0fdf4;
-  --color-secondary: #0099cc;
-  --color-secondary-hover: #0087b3;
-  --color-secondary-light: #f0f9ff;
-  --color-bg-page: #f9fafb;
+  /* Brand */
+  --color-primary: #01a84c;
+  --color-primary-hover: #018f41;
+  --color-primary-light: #e8f8ee;
+  --color-secondary: #1a56db;
+  --color-secondary-hover: #1647b8;
+  --color-secondary-light: #eef2ff;
+
+  /* Surfaces */
+  --color-bg-page: #fbfaf7;
   --color-bg-card: #ffffff;
-  --color-border: #e5e7eb;
-  --color-border-light: #f3f4f6;
-  --color-text-primary: #111827;
-  --color-text-secondary: #6b7280;
-  --color-text-muted: #9ca3af;
-  --color-success: #01c058;
-  --color-warning: #f59e0b;
-  --color-danger: #ef4444;
-  --color-admin-accent: #1f2937;
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --color-ink: #0d1b16;
+  --color-border: #e8e6df;
+  --color-border-light: #f1efe9;
+
+  /* Text */
+  --color-text-primary: #14241d;
+  --color-text-secondary: #5b6661;
+  --color-text-muted: #98a09b;
+
+  /* Status */
+  --color-success: #01a84c;
+  --color-warning: #e08a00;
+  --color-danger: #dc3434;
+  --color-admin-accent: #14241d;
+
+  /* Type */
+  --font-sans: var(--font-jakarta), system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-fraunces), Georgia, serif;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
@@ -31,12 +46,19 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  letter-spacing: -0.01em;
 }
 
 /* Scrollbar minimal */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -44,10 +66,95 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 3px;
+  background: #d6d3ca;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: #b3b0a6;
+}
+
+/* Selection */
+::selection {
+  background: var(--color-primary-light);
+  color: var(--color-primary-hover);
+}
+
+/* Reveal-on-load utilities for landing page */
+@keyframes fk-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fk-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fk-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.fk-rise {
+  opacity: 0;
+  animation: fk-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.fk-fade {
+  opacity: 0;
+  animation: fk-fade 0.9s ease forwards;
+}
+
+.fk-marquee {
+  animation: fk-marquee 32s linear infinite;
+}
+
+.fk-marquee-track:hover .fk-marquee {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fk-rise,
+  .fk-fade {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .fk-marquee {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* Subtle grid texture for hero sections */
+.fk-grid-texture {
+  background-image:
+    linear-gradient(to right, rgba(13, 27, 22, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(13, 27, 22, 0.035) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+
+/* Chat markdown-ish prose spacing */
+.fk-prose p {
+  margin: 0;
+}
+.fk-prose p + p {
+  margin-top: 0.75rem;
 }

@@ -1,15 +1,24 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Fraunces, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
+const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-jakarta",
+  display: "swap",
+});
+
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  variable: "--font-fraunces",
+  display: "swap",
+  axes: ["opsz", "SOFT", "WONK"],
 });
 
 export const metadata: Metadata = {
-  title: "Fikra Academy",
-  description: "Platform persiapan SNBT/UTBK - Fikra Academy",
+  title: "Fikra Academy — Persiapan SNBT & UTBK",
+  description:
+    "Platform persiapan SNBT/UTBK dengan tryout berstandar, analisis performa, dan Kak Fikra, tutor AI yang siap bantu kamu lolos PTN impian.",
 };
 
 export default function RootLayout({
@@ -18,7 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="id" className={`${inter.variable} h-full`}>
+    <html lang="id" className={`${jakarta.variable} ${fraunces.variable} h-full`}>
       <body className="min-h-full flex flex-col antialiased">{children}</body>
     </html>
   );
