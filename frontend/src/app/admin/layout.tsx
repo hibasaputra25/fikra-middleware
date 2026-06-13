@@ -6,6 +6,8 @@ import AuthGuard from "@/components/layout/AuthGuard";
 const navItems = [
   { label: "Dashboard", href: "/admin/dashboard" },
   { label: "Users", href: "/admin/users" },
+  { label: "Kategori", href: "/admin/collections" },
+  { label: "Bank Soal", href: "/admin/questions" },
   { label: "Tryout", href: "/admin/tryout" },
   { label: "Settings", href: "/admin/settings" },
 ];

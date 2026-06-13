@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 
 const { testConnection } = require('./src/config/db');
 const { errorHandler } = require('./src/middleware/errorHandler');
@@ -13,16 +14,29 @@ const quizzesRoutes = require('./src/routes/quizzes');
 const studentsRoutes = require('./src/routes/students');
 const resultsRoutes = require('./src/routes/results');
 const chatRoutes = require('./src/routes/chat');
+const categoriesRoutes = require('./src/routes/categories');
+const questionsRoutes = require('./src/routes/questions');
+const uploadsRoutes = require('./src/routes/uploads');
+const tagsRoutes = require('./src/routes/tags');
+const collectionsRoutes = require('./src/routes/collections');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' } // izinkan FE load gambar
+}));
 app.use(cors({
     origin: process.env.FRONTEND_URL || '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Static: serve folder uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+    maxAge: '7d',
+    fallthrough: true
 }));
 
 // Rate limiting
@@ -57,6 +71,11 @@ app.use('/api/quizzes', quizzesRoutes);
 app.use('/api/students', studentsRoutes);
 app.use('/api/results', resultsRoutes);
 app.use('/api/chat', chatLimiter, chatRoutes);
+app.use('/api/categories', categoriesRoutes);
+app.use('/api/questions', questionsRoutes);
+app.use('/api/uploads', uploadsRoutes);
+app.use('/api/tags', tagsRoutes);
+app.use('/api/collections', collectionsRoutes);
 
 // 404 handler
 app.use((req, res) => {

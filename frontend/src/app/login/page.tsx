@@ -30,9 +30,16 @@ export default function LoginPage() {
     try {
       const res = await authAPI.login(username, password);
       const { token, user } = res.data;
-      const userWithRole = { ...user, role: "siswa" as const };
-      setAuth(userWithRole, token);
-      router.push("/siswa/dashboard");
+      setAuth(user, token);
+
+      // Redirect berdasarkan role
+      if (user.role === "admin") {
+        router.push("/admin/dashboard");
+      } else if (user.role === "guru") {
+        router.push("/guru/dashboard");
+      } else {
+        router.push("/siswa/dashboard");
+      }
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string } } };
       setError(axiosErr.response?.data?.error || "Gagal login, coba lagi");

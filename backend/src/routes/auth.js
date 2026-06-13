@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { loginSiswa } = require('../config/moodle');
-const { panggilAPI } = require('../config/moodle');
+const { loginSiswa, getRoleUser } = require('../config/moodle');
 const axios = require('axios');
 
 // POST /api/auth/login
@@ -26,13 +25,17 @@ router.post('/login', async (req, res, next) => {
 
         const user = siteInfo.data;
 
+        // Tentukan role berdasarkan role Moodle di course
+        const role = await getRoleUser(user.userid, token);
+
         res.json({
             token,
             user: {
                 id: user.userid,
                 username: user.username,
                 nama: user.fullname,
-                foto: user.userpictureurl
+                foto: user.userpictureurl,
+                role
             }
         });
     } catch (err) {
@@ -65,11 +68,16 @@ router.get('/me', async (req, res, next) => {
         }
 
         const user = response.data;
+
+        // Tentukan role berdasarkan role Moodle di course
+        const role = await getRoleUser(user.userid, token);
+
         res.json({
             id: user.userid,
             username: user.username,
             nama: user.fullname,
-            foto: user.userpictureurl
+            foto: user.userpictureurl,
+            role
         });
     } catch (err) {
         next(err);

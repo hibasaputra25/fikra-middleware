@@ -7,3 +7,13 @@ node_modules/
 # Moodle backup & database dumps (jangan di-push)
 *.mbz
 *.sql
+
+# Tapi schema & migration SQL tetap di-track
+!backend/schema.sql
+!backend/migrations/
+!backend/migrations/*.sql
+
+# Uploads (gambar soal yang di-upload user)
+backend/uploads/questions/*
+!backend/uploads/questions/.gitkeep
+backend/uploads/.gitkeep

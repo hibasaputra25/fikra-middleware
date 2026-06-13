@@ -41,4 +41,39 @@ async function loginSiswa(username, password) {
     return response.data.token;
 }
 
-module.exports = { panggilAPI, loginSiswa };
+// Tentukan role aplikasi berdasarkan role Moodle di course
+async function getRoleUser(userId) {
+    try {
+        const courseId = process.env.MOODLE_COURSE_ID || 2;
+
+        const response = await axios.get(MOODLE_URL, {
+            params: {
+                wstoken: MOODLE_TOKEN,
+                wsfunction: 'core_enrol_get_enrolled_users',
+                moodlewsrestformat: 'json',
+                courseid: courseId
+            },
+            timeout: 15000
+        });
+
+        if (!Array.isArray(response.data)) return 'siswa';
+
+        const user = response.data.find(u => u.id === userId);
+        if (!user || !user.roles) return 'siswa';
+
+        const roleShortnames = user.roles.map(r => r.shortname);
+
+        if (roleShortnames.includes('manager') || roleShortnames.includes('coursecreator')) {
+            return 'admin';
+        }
+        if (roleShortnames.includes('editingteacher') || roleShortnames.includes('teacher')) {
+            return 'guru';
+        }
+        return 'siswa';
+    } catch (err) {
+        console.warn('⚠️ Gagal ambil role user:', err.message);
+        return 'siswa';
+    }
+}
+
+module.exports = { panggilAPI, loginSiswa, getRoleUser };
