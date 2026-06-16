@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import LandingNav from "@/components/landing/LandingNav";
 import {
   ArrowRight,
@@ -469,9 +470,13 @@ export default function Home() {
         <div className="max-w-[1200px] mx-auto px-5 sm:px-6 py-12">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xs">FA</span>
-              </div>
+              <Image
+                src="/FA.png"
+                alt="Fikra Academy"
+                width={32}
+                height={32}
+                className="w-8 h-8 rounded-lg object-contain"
+              />
               <span className="font-semibold tracking-tight">Fikra Academy</span>
             </div>
             <div className="flex items-center gap-6 text-sm text-text-secondary">

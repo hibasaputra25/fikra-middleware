@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { authAPI } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
 import Button from "@/components/ui/Button";
@@ -59,9 +60,14 @@ export default function LoginPage() {
         />
 
         <Link href="/" className="relative flex items-center gap-2.5 w-fit">
-          <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center">
-            <span className="text-white font-bold text-sm">FA</span>
-          </div>
+          <Image
+            src="/FA.png"
+            alt="Fikra Academy"
+            width={36}
+            height={36}
+            priority
+            className="w-9 h-9 rounded-xl object-contain bg-white/10 p-0.5"
+          />
           <span className="text-[17px] font-semibold tracking-tight">Fikra Academy</span>
         </Link>
 
@@ -105,9 +111,14 @@ export default function LoginPage() {
 
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-2.5 mb-8">
-            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-              <span className="text-white font-bold">FA</span>
-            </div>
+            <Image
+              src="/FA.png"
+              alt="Fikra Academy"
+              width={40}
+              height={40}
+              priority
+              className="w-10 h-10 rounded-xl object-contain"
+            />
             <span className="text-lg font-semibold tracking-tight">Fikra Academy</span>
           </div>
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -51,9 +52,14 @@ export default function Navbar({ items, accent = "primary" }: NavbarProps) {
         <div className="flex items-center justify-between h-14">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 shrink-0">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shadow-sm">
-              <span className="text-white font-bold text-sm">FA</span>
-            </div>
+            <Image
+              src="/FA.png"
+              alt="Fikra Academy"
+              width={32}
+              height={32}
+              priority
+              className="w-8 h-8 rounded-lg object-contain"
+            />
             <span className="text-base font-semibold tracking-tight text-text-primary hidden sm:block">
               Fikra Academy
             </span>

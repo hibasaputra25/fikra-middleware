@@ -153,8 +153,17 @@ export default function TryoutDetailPage() {
 
       {/* Actions */}
       <div className="flex flex-wrap gap-3">
+        {quiz.status === "open" && (
+          <Link href={`/siswa/tryout/${quiz.id}/play`}>
+            <Button variant="primary" size="lg">
+              Mulai Tryout
+            </Button>
+          </Link>
+        )}
         <Link href={`/siswa/hasil/${quiz.id}`}>
-          <Button variant="primary">Lihat Hasil</Button>
+          <Button variant={quiz.status === "open" ? "outline" : "primary"}>
+            Lihat Hasil
+          </Button>
         </Link>
         <Link href={`/siswa/ranking/${quiz.id}`}>
           <Button variant="outline">Lihat Ranking</Button>

@@ -287,6 +287,67 @@ export const collectionAPI = {
   remove: (id: number) => api.delete(`/collections/${id}`),
 };
 
+// Quiz Player
+export interface QuizQuestion {
+  slot: number;
+  type: string;
+  page: number;
+  html: string;
+  sequencecheck: number;
+  flagged: boolean;
+  state: string | null;
+  status: string | null;
+  number: number;
+  blockedbyprevious: boolean;
+}
+
+export interface AttemptSummaryQuestion {
+  slot: number;
+  type: string;
+  page: number;
+  flagged: boolean;
+  state: string;
+  status: string;
+  number: number;
+  mark: string | null;
+  maxmark: string | null;
+}
+
+export const quizPlayerAPI = {
+  // Cek akses quiz
+  getAccess: (quizId: number) =>
+    api.get(`/quiz-player/${quizId}/access`),
+
+  // Mulai atau lanjutkan attempt
+  start: (quizId: number) =>
+    api.post<{ attempt_id: number; attempt_ke: number; timestart: number; is_new: boolean }>(
+      `/quiz-player/${quizId}/start`
+    ),
+
+  // Ambil semua soal (page=-1 = semua)
+  getAttempt: (quizId: number, attemptId: number, page = -1) =>
+    api.get<{ attempt_id: number; attempt: object; questions: QuizQuestion[]; total_questions: number }>(
+      `/quiz-player/${quizId}/attempt/${attemptId}?page=${page}`
+    ),
+
+  // Ambil summary soal (untuk halaman konfirmasi)
+  getSummary: (quizId: number, attemptId: number) =>
+    api.get<{ questions: AttemptSummaryQuestion[] }>(
+      `/quiz-player/${quizId}/attempt/${attemptId}/summary`
+    ),
+
+  // Auto-save jawaban
+  save: (quizId: number, attemptId: number, data: Array<{ name: string; value: string }>) =>
+    api.post(`/quiz-player/${quizId}/attempt/${attemptId}/save`, { data }),
+
+  // Submit (selesaikan tryout)
+  submit: (quizId: number, attemptId: number, data: Array<{ name: string; value: string }> = []) =>
+    api.post<{ success: boolean; redirect: string }>(
+      `/quiz-player/${quizId}/attempt/${attemptId}/submit`,
+      { data }
+    ),
+};
+
 // Uploads
 export const uploadAPI = {
   questionImage: (file: File) => {

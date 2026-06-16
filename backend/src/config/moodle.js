@@ -26,6 +26,54 @@ async function panggilAPI(fungsi, parameter = {}) {
     }
 }
 
+// Panggil API Moodle menggunakan token user tertentu
+async function panggilAPIAsUser(userToken, fungsi, parameter = {}) {
+    try {
+        const response = await axios.get(MOODLE_URL, {
+            params: {
+                wstoken: userToken,
+                wsfunction: fungsi,
+                moodlewsrestformat: 'json',
+                ...parameter
+            },
+            timeout: 30000
+        });
+
+        if (response.data && response.data.exception) {
+            throw new Error(`Moodle API Error: ${response.data.message}`);
+        }
+
+        return response.data;
+    } catch (err) {
+        if (err.message.startsWith('Moodle API Error')) throw err;
+        throw new Error(`Network Error: ${err.message}`);
+    }
+}
+
+// Ambil atau generate token Moodle untuk user tertentu
+async function getUserToken(username) {
+    const pluginUrl = process.env.MOODLE_URL.replace('/webservice/rest/server.php', '/local/fikra_auth/token.php');
+    const secret = process.env.FIKRA_MOODLE_SECRET || 'fikra-secret-change-this';
+
+    try {
+        const response = await axios.get(pluginUrl, {
+            params: { username, secret },
+            timeout: 10000
+        });
+
+        if (response.data.error) {
+            throw new Error(response.data.error);
+        }
+
+        return response.data;
+    } catch (err) {
+        if (err.response?.data?.error) {
+            throw new Error(`Token Error: ${err.response.data.error}`);
+        }
+        throw new Error(`Network Error: ${err.message}`);
+    }
+}
+
 // Login siswa via Moodle dan dapatkan token
 async function loginSiswa(username, password) {
     const loginUrl = process.env.MOODLE_URL.replace('/webservice/rest/server.php', '/login/token.php');
@@ -76,4 +124,4 @@ async function getRoleUser(userId) {
     }
 }
 
-module.exports = { panggilAPI, loginSiswa, getRoleUser };
+module.exports = { panggilAPI, panggilAPIAsUser, getUserToken, loginSiswa, getRoleUser };
