@@ -12,12 +12,25 @@ import {
   AlertTriangle,
   CheckCircle,
   Clock,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type Phase = "loading" | "playing" | "summary" | "submitting" | "error";
+
+// Key untuk localStorage per quiz + user
+function getStorageKey(userId: number, quizId: number) {
+  return `fikra_quiz_progress_${userId}_${quizId}`;
+}
+
+interface SavedProgress {
+  attemptId: number;
+  answers: AnswerMap;
+  currentSlot: number;
+  savedAt: number;
+}
 
 interface AnswerMap {
   [slot: number]: Array<{ name: string; value: string }>;
@@ -466,7 +479,8 @@ function QuestionNavGrid({
   return (
     <div className="grid grid-cols-5 gap-1.5">
       {questions.map((q) => {
-        const isAnswered = (answers[q.slot]?.length ?? 0) > 1;
+        const isDescription = q.type === "description";
+        const isAnswered = !isDescription && (answers[q.slot]?.length ?? 0) > 1;
         const isCurrent = q.slot === currentSlot;
         const isFlagged = q.flagged;
         return (
@@ -479,12 +493,15 @@ function QuestionNavGrid({
                 ? "bg-primary text-white shadow-md scale-105"
                 : isFlagged
                   ? "bg-amber-100 text-amber-700 border border-amber-300"
-                  : isAnswered
-                    ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                    : "bg-gray-100 text-gray-500 hover:bg-gray-200",
+                  : isDescription
+                    ? "bg-blue-50 text-blue-400 border border-blue-200 italic"
+                    : isAnswered
+                      ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                      : "bg-gray-100 text-gray-500 hover:bg-gray-200",
             )}
+            title={isDescription ? "Teks informasi" : `Soal ${q.number ?? q.slot}`}
           >
-            {q.number ?? q.slot}
+            {isDescription ? "i" : (q.number ?? q.slot)}
           </button>
         );
       })}
@@ -505,11 +522,12 @@ function SummaryView({
   onSubmit: () => void;
   submitting: boolean;
 }) {
-  const answered = questions.filter(
+  const questionableOnly = questions.filter((q) => q.type !== "description");
+  const answered = questionableOnly.filter(
     (q) => (answers[q.slot]?.length ?? 0) > 1,
   ).length;
   const flagged = questions.filter((q) => q.flagged).length;
-  const unanswered = questions.length - answered;
+  const unanswered = questionableOnly.length - answered;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -544,27 +562,30 @@ function SummaryView({
           </p>
           <div className="grid grid-cols-8 gap-1.5">
             {questions.map((q) => {
-              const isAnswered = (answers[q.slot]?.length ?? 0) > 1;
+              const isDescription = q.type === "description";
+              const isAnswered = !isDescription && (answers[q.slot]?.length ?? 0) > 1;
               return (
                 <div
                   key={q.slot}
                   className={cn(
                     "aspect-square rounded-lg text-xs font-semibold flex items-center justify-center",
-                    q.flagged
-                      ? "bg-amber-100 text-amber-700"
-                      : isAnswered
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-red-100 text-red-500",
+                    isDescription
+                      ? "bg-blue-50 text-blue-400 border border-blue-200 italic"
+                      : q.flagged
+                        ? "bg-amber-100 text-amber-700"
+                        : isAnswered
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-red-100 text-red-500",
                   )}
                 >
-                  {q.number ?? q.slot}
+                  {isDescription ? "i" : (q.number ?? q.slot)}
                 </div>
               );
             })}
           </div>
 
           {/* Legend */}
-          <div className="flex items-center gap-4 mt-3 text-xs text-text-secondary">
+          <div className="flex items-center gap-4 mt-3 text-xs text-text-secondary flex-wrap">
             <span className="flex items-center gap-1.5">
               <span className="w-3 h-3 bg-emerald-100 rounded" /> Dijawab
             </span>
@@ -573,6 +594,9 @@ function SummaryView({
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-3 h-3 bg-amber-100 rounded" /> Ditandai
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 bg-blue-50 border border-blue-200 rounded italic flex items-center justify-center text-blue-400" style={{fontSize: '8px'}}>i</span> Informasi
             </span>
           </div>
         </div>
@@ -628,10 +652,76 @@ export default function QuizPlayerPage() {
 
   const autoSaveRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSavedRef = useRef<AnswerMap>({});
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const isActiveQuiz = phase === "playing" || phase === "summary";
+
+  // ─── Simpan progress ke localStorage ───────────────────────────────────
+  const saveProgressLocally = useCallback((currentAnswers: AnswerMap, slot: number, aId: number) => {
+    if (!user) return;
+    const key = getStorageKey(user.id, quizId);
+    const progress: SavedProgress = {
+      attemptId: aId,
+      answers: currentAnswers,
+      currentSlot: slot,
+      savedAt: Date.now(),
+    };
+    try {
+      localStorage.setItem(key, JSON.stringify(progress));
+    } catch {
+      // localStorage penuh atau tidak tersedia
+    }
+  }, [user, quizId]);
+
+  const clearProgressLocally = useCallback(() => {
+    if (!user) return;
+    localStorage.removeItem(getStorageKey(user.id, quizId));
+  }, [user, quizId]);
+
+  const loadProgressLocally = useCallback((): SavedProgress | null => {
+    if (!user) return null;
+    try {
+      const raw = localStorage.getItem(getStorageKey(user.id, quizId));
+      if (!raw) return null;
+      return JSON.parse(raw) as SavedProgress;
+    } catch {
+      return null;
+    }
+  }, [user, quizId]);
+
+  // ─── Broadcast status quiz ke layout ──────────────────────────────────
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('quiz-active', { detail: { active: isActiveQuiz } }));
+  }, [isActiveQuiz]);
+
+  // Listen untuk event keluar dari layout (klik logo)
+  useEffect(() => {
+    const handleSaveAndExit = () => {
+      if (attemptId) saveProgressLocally(answers, currentSlot, attemptId);
+      router.push(`/siswa/tryout/${quizId}`);
+    };
+    window.addEventListener('quiz-save-and-exit', handleSaveAndExit);
+    return () => window.removeEventListener('quiz-save-and-exit', handleSaveAndExit);
+  }, [attemptId, answers, currentSlot, quizId, router, saveProgressLocally]);
+
+  // ─── Blokir navigasi saat quiz aktif ─────────────────────────────────────
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isActiveQuiz) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isActiveQuiz]);
 
   // ─── Init: start attempt & load soal ─────────────────────────────────────
+  const initCalledRef = useRef(false);
+
   useEffect(() => {
     if (!user) return;
+    if (initCalledRef.current) return;
+    initCalledRef.current = true;
     initQuiz();
     return () => {
       if (autoSaveRef.current) clearInterval(autoSaveRef.current);
@@ -653,10 +743,9 @@ export default function QuizPlayerPage() {
       const qs = attemptRes.data.questions;
       setQuestions(qs);
 
-      // Set soal pertama
-      if (qs.length > 0) {
-        setCurrentSlot(qs[0].slot);
-      }
+      // Cek progress tersimpan di localStorage
+      const savedProgress = loadProgressLocally();
+      const hasSavedProgress = savedProgress && savedProgress.attemptId === attempt_id;
 
       // Inisialisasi answers dari sequencecheck
       const initialAnswers: AnswerMap = {};
@@ -664,8 +753,34 @@ export default function QuizPlayerPage() {
         const base = extractAnswersFromHTML(q.html, q.slot, attempt_id);
         if (base.length > 0) initialAnswers[q.slot] = base;
       });
-      setAnswers(initialAnswers);
-      lastSavedRef.current = initialAnswers;
+
+      // Merge dengan progress tersimpan jika ada
+      if (hasSavedProgress && savedProgress) {
+        // Gabungkan: prioritaskan jawaban tersimpan, tapi pastikan sequencecheck tetap dari Moodle
+        const mergedAnswers: AnswerMap = { ...initialAnswers };
+        Object.entries(savedProgress.answers).forEach(([slotStr, savedSlotAnswers]) => {
+          const slot = Number(slotStr);
+          if (initialAnswers[slot]) {
+            // Ambil sequencecheck dari Moodle, gabung dengan jawaban tersimpan
+            const seqAnswers = initialAnswers[slot].filter(a =>
+              a.name.includes(':sequencecheck') || a.name.includes('-seen')
+            );
+            const nonSeqSaved = savedSlotAnswers.filter(a =>
+              !a.name.includes(':sequencecheck') && !a.name.includes('-seen')
+            );
+            if (nonSeqSaved.length > 0) {
+              mergedAnswers[slot] = [...seqAnswers, ...nonSeqSaved];
+            }
+          }
+        });
+        setAnswers(mergedAnswers);
+        lastSavedRef.current = mergedAnswers;
+        setCurrentSlot(savedProgress.currentSlot);
+      } else {
+        setAnswers(initialAnswers);
+        lastSavedRef.current = initialAnswers;
+        if (qs.length > 0) setCurrentSlot(qs[0].slot);
+      }
 
       // Setup timer jika ada timelimit
       const attempt = attemptRes.data.attempt as Record<string, unknown>;
@@ -674,11 +789,10 @@ export default function QuizPlayerPage() {
         setTimeLimit(tl);
         setTimeLeft(tl);
       } else {
-        // Estimasi dari timestart dan timelimit quiz
-        setTimeLeft(0); // no limit
+        setTimeLeft(0);
       }
 
-      // Setup auto-save setiap 30 detik
+      // Setup auto-save setiap 30 detik ke Moodle + localStorage
       autoSaveRef.current = setInterval(() => {
         autoSave();
       }, 30000);
@@ -689,9 +803,15 @@ export default function QuizPlayerPage() {
         response?: { data?: { error?: string } };
         message?: string;
       };
-      setErrorMsg(
-        e.response?.data?.error || e.message || "Gagal memulai tryout",
-      );
+      const errMsg = e.response?.data?.error || e.message || "";
+
+      // Attempt sudah selesai — redirect ke hasil
+      if (errMsg.includes("finished") || errMsg.includes("already been finished")) {
+        router.replace(`/siswa/hasil/${quizId}`);
+        return;
+      }
+
+      setErrorMsg(errMsg || "Gagal memulai tryout");
       setPhase("error");
     }
   };
@@ -705,25 +825,35 @@ export default function QuizPlayerPage() {
     return () => clearInterval(interval);
   }, [phase, timeLeft]);
 
-  // ─── Auto-save ────────────────────────────────────────────────────────────
+  // ─── Auto-save — ke Moodle + localStorage ──────────────────────────────────
   const autoSave = useCallback(async () => {
     if (!attemptId) return;
     const allData = Object.values(answers).flat();
     if (allData.length === 0) return;
+
+    // Selalu simpan ke localStorage dulu (tidak perlu network)
+    saveProgressLocally(answers, currentSlot, attemptId);
+
+    // Coba kirim ke Moodle (bisa gagal kalau offline)
     try {
       await quizPlayerAPI.save(quizId, attemptId, allData);
       lastSavedRef.current = answers;
     } catch {
-      // silent fail — auto-save tidak boleh ganggu UX
+      // silent fail — localStorage sudah menyimpan
     }
-  }, [attemptId, answers, quizId]);
+  }, [attemptId, answers, currentSlot, quizId, saveProgressLocally]);
 
   // ─── Handlers ────────────────────────────────────────────────────────────
   const handleAnswer = (
     slot: number,
     data: Array<{ name: string; value: string }>,
   ) => {
-    setAnswers((prev) => ({ ...prev, [slot]: data }));
+    setAnswers((prev) => {
+      const newAnswers = { ...prev, [slot]: data };
+      // Simpan ke localStorage setiap jawaban berubah
+      if (attemptId) saveProgressLocally(newAnswers, currentSlot, attemptId);
+      return newAnswers;
+    });
   };
 
   const handleFlag = (slot: number) => {
@@ -735,22 +865,44 @@ export default function QuizPlayerPage() {
   const handleNext = () => {
     const idx = questions.findIndex((q) => q.slot === currentSlot);
     if (idx < questions.length - 1) {
-      setCurrentSlot(questions[idx + 1].slot);
+      const nextSlot = questions[idx + 1].slot;
+      setCurrentSlot(nextSlot);
       setSidebarOpen(false);
+      // Simpan posisi soal saat navigasi
+      if (attemptId) saveProgressLocally(answers, nextSlot, attemptId);
     }
   };
 
   const handlePrev = () => {
     const idx = questions.findIndex((q) => q.slot === currentSlot);
     if (idx > 0) {
-      setCurrentSlot(questions[idx - 1].slot);
+      const prevSlot = questions[idx - 1].slot;
+      setCurrentSlot(prevSlot);
       setSidebarOpen(false);
+      if (attemptId) saveProgressLocally(answers, prevSlot, attemptId);
     }
   };
 
   const handleJump = (slot: number) => {
     setCurrentSlot(slot);
     setSidebarOpen(false);
+    if (attemptId) saveProgressLocally(answers, slot, attemptId);
+  };
+
+  // Keluar dari quiz dengan konfirmasi
+  const handleExitRequest = () => {
+    if (isActiveQuiz) {
+      setShowExitConfirm(true);
+    } else {
+      router.back();
+    }
+  };
+
+  const handleExitConfirmed = () => {
+    // Simpan progress sebelum keluar
+    if (attemptId) saveProgressLocally(answers, currentSlot, attemptId);
+    setShowExitConfirm(false);
+    router.push(`/siswa/tryout/${quizId}`);
   };
 
   const handleOpenSummary = async () => {
@@ -785,12 +937,11 @@ export default function QuizPlayerPage() {
     try {
       const allData = Object.values(answers).flat();
       await quizPlayerAPI.submit(quizId, attemptId, allData);
+      // Hapus progress lokal setelah submit berhasil
+      clearProgressLocally();
       router.push(`/siswa/hasil/${quizId}`);
     } catch (err: unknown) {
-      const e = err as {
-        response?: { data?: { error?: string } };
-        message?: string;
-      };
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
       setErrorMsg(e.response?.data?.error || "Gagal submit tryout");
       setPhase("error");
     } finally {
@@ -807,9 +958,13 @@ export default function QuizPlayerPage() {
   const currentIdx = questions.findIndex((q) => q.slot === currentSlot);
   const isFirst = currentIdx === 0;
   const isLast = currentIdx === questions.length - 1;
-  const answeredCount = Object.values(answers).filter(
-    (a) => a.length > 1,
+
+  // Hanya hitung soal yang bukan description
+  const questionableSlots = questions.filter((q) => q.type !== "description");
+  const answeredCount = questionableSlots.filter(
+    (q) => (answers[q.slot]?.length ?? 0) > 1
   ).length;
+  const totalQuestions = questionableSlots.length;
 
   // ─── Render: loading ─────────────────────────────────────────────────────
   if (phase === "loading") {
@@ -855,14 +1010,58 @@ export default function QuizPlayerPage() {
   // ─── Render: playing ─────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Modal konfirmasi keluar */}
+      {showExitConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowExitConfirm(false)} />
+          <div className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <button
+              onClick={() => setShowExitConfirm(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <AlertTriangle className="w-8 h-8 text-amber-500 mb-3" />
+            <h2 className="font-semibold text-text-primary mb-2">Keluar dari tryout?</h2>
+            <p className="text-sm text-text-secondary mb-5">
+              Progress kamu akan disimpan. Kamu bisa melanjutkan tryout ini nanti dari soal yang sama.
+            </p>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowExitConfirm(false)}
+              >
+                Lanjutkan
+              </Button>
+              <Button
+                variant="primary"
+                className="flex-1"
+                onClick={handleExitConfirmed}
+              >
+                Simpan & Keluar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Top Bar */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-30">
         <div className="max-w-2xl mx-auto">
           {/* Row 1: progress & timer */}
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-text-secondary">
-              {answeredCount}/{questions.length} dijawab
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExitRequest}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                title="Keluar dari tryout"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <span className="text-xs text-text-secondary">
+                {answeredCount}/{totalQuestions} dijawab
+              </span>
+            </div>
             <span className="text-xs font-medium text-text-primary">
               Soal {currentIdx + 1} dari {questions.length}
             </span>
@@ -872,7 +1071,7 @@ export default function QuizPlayerPage() {
           <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mb-2">
             <div
               className="h-full bg-primary rounded-full transition-all"
-              style={{ width: `${(answeredCount / questions.length) * 100}%` }}
+              style={{ width: `${totalQuestions > 0 ? (answeredCount / totalQuestions) * 100 : 0}%` }}
             />
           </div>
 
@@ -936,7 +1135,7 @@ export default function QuizPlayerPage() {
             className="lg:hidden flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
           >
             <span className="font-medium">
-              {answeredCount}/{questions.length}
+              {answeredCount}/{totalQuestions}
             </span>
             <span>soal</span>
           </button>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuthStore } from "@/stores/authStore";
 import { useParams, useRouter } from "next/navigation";
 import { quizAPI } from "@/lib/api";
 import Container from "@/components/layout/Container";
@@ -10,7 +11,6 @@ import Button from "@/components/ui/Button";
 import { getStatusLabel } from "@/lib/utils";
 import { ArrowLeft, Clock, FileText, Calendar } from "lucide-react";
 import { formatDate } from "@/lib/utils";
-import { useAuthStore } from "@/stores/authStore";
 import Link from "next/link";
 
 interface QuizDetail {
@@ -34,8 +34,26 @@ export default function TryoutDetailPage() {
   const { user } = useAuthStore();
   const [quiz, setQuiz] = useState<QuizDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasSavedProgress, setHasSavedProgress] = useState(false);
 
   const quizId = Number(params.id);
+
+  // Cek apakah ada progress tersimpan di localStorage
+  useEffect(() => {
+    if (!user) return;
+    const key = `fikra_quiz_progress_${user.id}_${quizId}`;
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Progress valid jika tersimpan kurang dari 24 jam
+        const isValid = Date.now() - parsed.savedAt < 24 * 60 * 60 * 1000;
+        setHasSavedProgress(isValid);
+      } catch {
+        setHasSavedProgress(false);
+      }
+    }
+  }, [user, quizId]);
 
   useEffect(() => {
     loadQuiz();
@@ -83,7 +101,7 @@ export default function TryoutDetailPage() {
     <Container>
       {/* Back Button */}
       <button
-        onClick={() => router.back()}
+        onClick={() => router.push('/siswa/tryout')}
         className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary mb-6 transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />
@@ -156,7 +174,7 @@ export default function TryoutDetailPage() {
         {quiz.status === "open" && (
           <Link href={`/siswa/tryout/${quiz.id}/play`}>
             <Button variant="primary" size="lg">
-              Mulai Tryout
+              {hasSavedProgress ? "Lanjutkan Tryout" : "Mulai Tryout"}
             </Button>
           </Link>
         )}

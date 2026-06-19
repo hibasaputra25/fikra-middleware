@@ -10,26 +10,18 @@ function toMySQLDatetime(isoString) {
 async function simpanHasil(data) {
     const query = `
         INSERT INTO tryout_results 
-            (attempt_id, user_id, quiz_id, student_name, nama_tryout, waktu_selesai,
-             subtest_scores, skor_subtes, analisis_soal, ai_analysis, ai_insight,
-             total_score)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (attempt_id, user_id, quiz_id, nama_siswa, nama_tryout, waktu_selesai,
+             skor_subtes, analisis_soal, ai_insight)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-            student_name = VALUES(student_name),
+            nama_siswa = VALUES(nama_siswa),
             nama_tryout = VALUES(nama_tryout),
             waktu_selesai = VALUES(waktu_selesai),
-            subtest_scores = VALUES(subtest_scores),
             skor_subtes = VALUES(skor_subtes),
             analisis_soal = VALUES(analisis_soal),
-            ai_analysis = VALUES(ai_analysis),
             ai_insight = VALUES(ai_insight),
-            total_score = VALUES(total_score),
             updated_at = CURRENT_TIMESTAMP
     `;
-
-    const skorTotal = data.skor_subtes?.total?.skor
-        ? (data.skor_subtes.total.skor / 10).toFixed(2)
-        : null;
 
     const [result] = await pool.execute(query, [
         data.attempt_id,
@@ -38,12 +30,9 @@ async function simpanHasil(data) {
         data.nama_siswa,
         data.nama_tryout,
         toMySQLDatetime(data.waktu_selesai),
-        JSON.stringify(data.skor_subtes),   // subtest_scores (kolom lama)
-        JSON.stringify(data.skor_subtes),   // skor_subtes (kolom baru)
+        JSON.stringify(data.skor_subtes),
         JSON.stringify(data.analisis_soal || {}),
-        data.ai_insight || null,            // ai_analysis (kolom lama)
-        data.ai_insight || null,            // ai_insight (kolom baru)
-        skorTotal
+        data.ai_insight || null
     ]);
 
     return result;

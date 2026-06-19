@@ -8,6 +8,7 @@ const navItems = [
   { label: "Users", href: "/admin/users" },
   { label: "Kategori", href: "/admin/collections" },
   { label: "Bank Soal", href: "/admin/questions" },
+  { label: "Latihan", href: "/admin/latihan" },
   { label: "Tryout", href: "/admin/tryout" },
   { label: "Settings", href: "/admin/settings" },
 ];

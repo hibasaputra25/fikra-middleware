@@ -104,6 +104,9 @@ export default function RichTextEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3] },
+        // Exclude karena didefinisikan ulang di bawah dengan konfigurasi khusus
+        link: false,
+        underline: false,
       }),
       Underline,
       Placeholder.configure({ placeholder }),

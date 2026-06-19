@@ -9,11 +9,18 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { ClipboardCheck, Trophy, TrendingUp, Star } from "lucide-react";
 import Link from "next/link";
 
+interface SkorSubtes {
+  per_subtes: Record<string, { label: string; skor: number; benar: number; total: number }>;
+  total: { skor: number; benar: number; total: number };
+}
+
 interface HistoryItem {
   quiz_id: number;
-  quiz_nama: string;
-  total: { skor: number; benar: number; total: number };
-  per_subtes: Record<string, { label: string; skor: number; benar: number; total: number }>;
+  quiz_nama?: string;
+  nama_tryout?: string;
+  total?: { skor: number; benar: number; total: number };
+  per_subtes?: Record<string, { label: string; skor: number; benar: number; total: number }>;
+  skor_subtes?: SkorSubtes;
   waktu_selesai: string;
 }
 
@@ -38,14 +45,32 @@ export default function SiswaDashboard() {
     }
   };
 
+  // Helper untuk normalize struktur data dari DB
+  const getNilai = (item: HistoryItem) => {
+    if (item.total) return item.total;
+    if (item.skor_subtes?.total) return item.skor_subtes.total;
+    return { skor: 0, benar: 0, total: 0 };
+  };
+
+  const getPerSubtes = (item: HistoryItem) => {
+    if (item.per_subtes) return item.per_subtes;
+    if (item.skor_subtes?.per_subtes) return item.skor_subtes.per_subtes;
+    return {};
+  };
+
+  const getNamaTryout = (item: HistoryItem) => {
+    return item.quiz_nama || item.nama_tryout || `Quiz ${item.quiz_id}`;
+  };
+
   const latestResult = history[0];
   const bestScore = history.length > 0
-    ? Math.max(...history.map((h) => h.total?.skor || 0))
+    ? Math.max(...history.map((h) => getNilai(h).skor || 0))
     : 0;
 
   const strongestSubtes = () => {
-    if (!latestResult?.per_subtes) return "-";
-    const entries = Object.entries(latestResult.per_subtes);
+    if (!latestResult) return "-";
+    const perSubtes = getPerSubtes(latestResult);
+    const entries = Object.entries(perSubtes);
     if (entries.length === 0) return "-";
     const best = entries.sort((a, b) => b[1].skor - a[1].skor)[0];
     return best[0];
@@ -82,7 +107,7 @@ export default function SiswaDashboard() {
         />
         <StatCard
           label="Skor Terakhir"
-          value={latestResult?.total?.skor || "-"}
+          value={latestResult ? getNilai(latestResult).skor : "-"}
           icon={TrendingUp}
         />
         <StatCard
@@ -111,9 +136,9 @@ export default function SiswaDashboard() {
                   href={`/siswa/hasil/${item.quiz_id}`}
                   className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 transition-colors"
                 >
-                  <span className="text-sm text-text-primary">{item.quiz_nama}</span>
+                  <span className="text-sm text-text-primary">{getNamaTryout(item)}</span>
                   <span className="text-sm font-medium text-text-primary">
-                    {item.total?.skor || 0}/1000
+                    {getNilai(item).skor || 0}/1000
                   </span>
                 </Link>
               ))}

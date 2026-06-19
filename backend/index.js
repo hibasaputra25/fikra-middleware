@@ -20,6 +20,7 @@ const uploadsRoutes = require('./src/routes/uploads');
 const tagsRoutes = require('./src/routes/tags');
 const collectionsRoutes = require('./src/routes/collections');
 const quizPlayerRoutes = require('./src/routes/quizPlayer');
+const latihanRoutes = require('./src/routes/latihan');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -43,8 +44,9 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
 // Rate limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 menit
-    max: 100,
-    message: { error: 'Terlalu banyak request, coba lagi nanti' }
+    max: process.env.NODE_ENV === 'production' ? 300 : 1000,
+    message: { error: 'Terlalu banyak request, coba lagi nanti' },
+    skip: (req) => process.env.NODE_ENV !== 'production' // skip di development
 });
 
 const chatLimiter = rateLimit({
@@ -78,6 +80,7 @@ app.use('/api/uploads', uploadsRoutes);
 app.use('/api/tags', tagsRoutes);
 app.use('/api/collections', collectionsRoutes);
 app.use('/api/quiz-player', quizPlayerRoutes);
+app.use('/api/latihan', latihanRoutes);
 
 // 404 handler
 app.use((req, res) => {

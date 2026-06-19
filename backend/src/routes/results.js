@@ -4,41 +4,49 @@ const { getHasilSiswa, getSiswa, getQuizzes } = require('../services/moodleServi
 const { simpanHasil, getHasilFromDB, getRanking } = require('../services/dbService');
 const { generateAnalisis } = require('../services/aiService');
 
+// GET /api/results/ranking/:quizId — HARUS sebelum /:userId/:quizId
+router.get('/ranking/:quizId', async (req, res, next) => {
+    try {
+        const quizId = parseInt(req.params.quizId);
+        const ranking = await getRanking(quizId);
+        res.json({ quiz_id: quizId, total: ranking.length, data: ranking });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // GET /api/results/:userId/:quizId
-// Ambil hasil tryout siswa — cek DB dulu, fallback ke Moodle
 router.get('/:userId/:quizId', async (req, res, next) => {
     try {
         const userId = parseInt(req.params.userId);
         const quizId = parseInt(req.params.quizId);
         const forceRefresh = req.query.refresh === 'true';
 
-        // Cek DB dulu kecuali diminta refresh
         if (!forceRefresh) {
             const cached = await getHasilFromDB(userId, quizId);
             if (cached) {
-                return res.json({ source: 'db', ...cached });
+                const skorSubtes = cached.skor_subtes || {};
+                return res.json({
+                    source: 'db',
+                    attempt_id: cached.attempt_id,
+                    waktu_selesai: cached.waktu_selesai,
+                    quiz_info: skorSubtes.quiz_info || null,
+                    per_subtes: skorSubtes.per_subtes || {},
+                    total: skorSubtes.total || { benar: 0, total: 0, skor: 0 },
+                    ai_insight: cached.ai_insight || null
+                });
             }
         }
 
-        // Ambil dari Moodle
         const hasil = await getHasilSiswa(userId, quizId);
-
         if (!hasil) {
-            return res.status(404).json({
-                error: 'Siswa belum mengerjakan tryout ini'
-            });
+            return res.status(404).json({ error: 'Siswa belum mengerjakan tryout ini' });
         }
 
-        // Ambil info siswa dan quiz untuk disimpan
-        const [siswaList, quizList] = await Promise.all([
-            getSiswa(),
-            getQuizzes()
-        ]);
-
+        const [siswaList, quizList] = await Promise.all([getSiswa(), getQuizzes()]);
         const siswa = siswaList.find(s => s.id === userId);
         const quiz = quizList.find(q => q.id === quizId);
 
-        // Generate AI insight
         let aiInsight = null;
         try {
             aiInsight = await generateAnalisis(
@@ -50,7 +58,6 @@ router.get('/:userId/:quizId', async (req, res, next) => {
             console.warn('⚠️ AI insight gagal:', aiErr.message);
         }
 
-        // Simpan ke DB
         await simpanHasil({
             attempt_id: hasil.attempt_id,
             user_id: userId,
@@ -58,10 +65,7 @@ router.get('/:userId/:quizId', async (req, res, next) => {
             nama_siswa: siswa?.nama || `User ${userId}`,
             nama_tryout: quiz?.nama || `Quiz ${quizId}`,
             waktu_selesai: hasil.waktu_selesai,
-            skor_subtes: {
-                per_subtes: hasil.per_subtes,
-                total: hasil.total
-            },
+            skor_subtes: { per_subtes: hasil.per_subtes, total: hasil.total },
             analisis_soal: {},
             ai_insight: aiInsight
         });
@@ -77,23 +81,6 @@ router.get('/:userId/:quizId', async (req, res, next) => {
             per_subtes: hasil.per_subtes,
             total: hasil.total,
             ai_insight: aiInsight
-        });
-    } catch (err) {
-        next(err);
-    }
-});
-
-// GET /api/results/:quizId/ranking
-// Ranking semua siswa untuk quiz tertentu
-router.get('/:quizId/ranking', async (req, res, next) => {
-    try {
-        const quizId = parseInt(req.params.quizId);
-        const ranking = await getRanking(quizId);
-
-        res.json({
-            quiz_id: quizId,
-            total: ranking.length,
-            data: ranking
         });
     } catch (err) {
         next(err);

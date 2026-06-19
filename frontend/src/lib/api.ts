@@ -60,7 +60,7 @@ export const studentAPI = {
 export const resultAPI = {
   get: (userId: number, quizId: number, refresh?: boolean) =>
     api.get(`/results/${userId}/${quizId}${refresh ? "?refresh=true" : ""}`),
-  getRanking: (quizId: number) => api.get(`/results/${quizId}/ranking`),
+  getRanking: (quizId: number) => api.get(`/results/ranking/${quizId}`),
 };
 
 // Chat
@@ -245,6 +245,87 @@ export const questionAPI = {
     api.get<{ data: QuestionRevisionListItem[] }>(`/questions/${id}/revisions`),
   getRevision: (id: number, rev: number) =>
     api.get(`/questions/${id}/revisions/${rev}`),
+};
+
+// Latihan
+export interface LatihanPaket {
+  id: number;
+  category_id: number | null;
+  category_name?: string;
+  category_code?: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  total_questions: number;
+  duration_minutes: number | null;
+  difficulty: 'easy' | 'medium' | 'hard' | 'mixed';
+  sort_order: number;
+  is_active?: number;
+  question_count?: number;
+  created_at?: string;
+}
+
+export interface LatihanKategori {
+  category_id: number | null;
+  category_name: string;
+  category_code: string | null;
+  category_slug: string | null;
+  pakets: LatihanPaket[];
+}
+
+export interface LatihanQuestion {
+  id: number;
+  type: string;
+  content: string;
+  explanation?: string | null;
+  difficulty: string;
+  options: Array<{ id: number; content: string; sort_order: number; is_correct?: number }>;
+  images: Array<{ id: number; url: string; alt_text?: string; position: string }>;
+  selected_option_ids?: number[];
+  answer_text?: string | null;
+  is_correct?: number | null;
+  is_flagged?: number;
+  marks_earned?: number | null;
+  sort_order: number;
+  marks: number;
+}
+
+export interface LatihanAttempt {
+  id: number;
+  paket_id: number;
+  user_id: number;
+  status: 'in_progress' | 'submitted' | 'abandoned';
+  started_at: string;
+  finished_at?: string | null;
+  time_spent_seconds: number;
+  total_correct: number;
+  total_wrong: number;
+  total_score: number | null;
+  paket_name?: string;
+  category_name?: string;
+  category_code?: string;
+}
+
+export const latihanAPI = {
+  // Siswa
+  getAll: () => api.get<{ data: LatihanKategori[] }>('/latihan'),
+  getPaket: (paketId: number) => api.get<LatihanPaket & { questions: LatihanQuestion[] }>(`/latihan/paket/${paketId}`),
+  start: (paketId: number) => api.post<{ attempt: LatihanAttempt; answers: unknown[]; is_new: boolean }>(`/latihan/paket/${paketId}/start`),
+  saveAnswer: (attemptId: number, data: { question_id: number; selected_option_ids?: number[]; answer_text?: string; is_flagged?: boolean }) =>
+    api.post(`/latihan/attempt/${attemptId}/answer`, data),
+  submit: (attemptId: number) =>
+    api.post<{ success: boolean; totalCorrect: number; totalWrong: number; totalScore: number }>(`/latihan/attempt/${attemptId}/submit`),
+  getResult: (attemptId: number) =>
+    api.get<{ attempt: LatihanAttempt; questions: LatihanQuestion[] }>(`/latihan/attempt/${attemptId}/result`),
+  getRiwayat: () => api.get<{ data: LatihanAttempt[] }>('/latihan/riwayat'),
+
+  // Admin
+  adminGetAll: () => api.get<{ data: LatihanPaket[]; total: number }>('/latihan/admin/paket'),
+  adminCreate: (data: Partial<LatihanPaket>) => api.post<LatihanPaket>('/latihan/admin/paket', data),
+  adminUpdate: (id: number, data: Partial<LatihanPaket>) => api.put<LatihanPaket>(`/latihan/admin/paket/${id}`, data),
+  adminDelete: (id: number) => api.delete(`/latihan/admin/paket/${id}`),
+  adminSetQuestions: (paketId: number, question_ids: number[]) =>
+    api.put(`/latihan/admin/paket/${paketId}/questions`, { question_ids }),
 };
 
 // Tags
