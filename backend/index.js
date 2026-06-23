@@ -21,6 +21,7 @@ const tagsRoutes = require('./src/routes/tags');
 const collectionsRoutes = require('./src/routes/collections');
 const quizPlayerRoutes = require('./src/routes/quizPlayer');
 const latihanRoutes = require('./src/routes/latihan');
+const sesiRoutes = require('./src/routes/sesi');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -81,6 +82,7 @@ app.use('/api/tags', tagsRoutes);
 app.use('/api/collections', collectionsRoutes);
 app.use('/api/quiz-player', quizPlayerRoutes);
 app.use('/api/latihan', latihanRoutes);
+app.use('/api/sesi', sesiRoutes);
 
 // 404 handler
 app.use((req, res) => {

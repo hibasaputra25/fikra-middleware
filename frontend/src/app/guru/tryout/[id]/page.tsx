@@ -122,7 +122,7 @@ export default function GuruTryoutDetailPage() {
   }
 
   return (
-    <Container>
+    <div className="max-w-[1100px] mx-auto px-4 sm:px-6 py-8">
       {/* Back */}
       <button
         onClick={() => router.back()}
@@ -134,7 +134,7 @@ export default function GuruTryoutDetailPage() {
 
       {/* Quiz Info */}
       <div className="mb-6">
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
           <h1 className="text-xl font-semibold text-text-primary">{quiz.nama}</h1>
           <Badge variant={getStatusVariant(quiz.status)} dot>
             {getStatusLabel(quiz.status)}
@@ -142,71 +142,105 @@ export default function GuruTryoutDetailPage() {
         </div>
         <div className="flex flex-wrap gap-4 text-sm text-text-secondary mt-1">
           <span>{ranking.length} siswa mengerjakan</span>
-          <span>Rata-rata: {avgScore}/1000</span>
+          <span>Rata-rata: <span className="font-medium text-text-primary">{avgScore}/1000</span></span>
         </div>
       </div>
 
-      {/* Distribution Chart */}
-      {ranking.length > 0 && (
-        <Card className="mb-4">
-          <CardTitle>Distribusi Skor</CardTitle>
-          <div className="mt-4 h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData()}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#6b7280" }} />
-                <YAxis tick={{ fontSize: 12, fill: "#6b7280" }} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: "8px",
-                    border: "1px solid #e5e7eb",
-                    fontSize: "12px",
-                  }}
-                />
-                <Bar dataKey="count" name="Jumlah Siswa" fill="#0099cc" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-      )}
-
-      {/* Ranking Table */}
-      <Card padding="none">
-        <div className="px-5 py-3 border-b border-border">
-          <CardTitle>Ranking Siswa</CardTitle>
-        </div>
-        <div className="grid grid-cols-[60px_1fr_100px] sm:grid-cols-[60px_1fr_120px] px-5 py-2 border-b border-border bg-gray-50/50">
-          <span className="text-xs font-medium text-text-muted uppercase">#</span>
-          <span className="text-xs font-medium text-text-muted uppercase">Nama</span>
-          <span className="text-xs font-medium text-text-muted uppercase text-right">Skor</span>
-        </div>
-        <div className="divide-y divide-border-light">
-          {ranking.length === 0 ? (
-            <div className="px-5 py-8 text-center">
-              <p className="text-sm text-text-muted">Belum ada siswa yang mengerjakan.</p>
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+        {/* Ranking Table - wider */}
+        <div className="lg:col-span-3">
+          <div className="bg-white border border-border rounded-xl overflow-hidden">
+            <div className="px-5 py-3 border-b border-border">
+              <h2 className="text-sm font-semibold text-text-primary">Ranking Siswa</h2>
             </div>
-          ) : (
-            ranking.map((item) => (
-              <div
-                key={item.user_id}
-                className="grid grid-cols-[60px_1fr_100px] sm:grid-cols-[60px_1fr_120px] px-5 py-3 items-center"
-              >
-                <div>
-                  {item.rank <= 3 ? (
-                    <Trophy className={cn("w-4 h-4", getMedalColor(item.rank))} />
-                  ) : (
-                    <span className="text-sm text-text-secondary">{item.rank}</span>
-                  )}
+            <div className="grid grid-cols-[52px_1fr_100px] px-5 py-2.5 border-b border-border-light bg-gray-50 text-xs font-semibold text-text-muted uppercase tracking-wide">
+              <span>#</span>
+              <span>Nama</span>
+              <span className="text-right">Skor</span>
+            </div>
+            <div className="divide-y divide-border-light">
+              {ranking.length === 0 ? (
+                <div className="px-5 py-10 text-center">
+                  <p className="text-sm text-text-muted">Belum ada siswa yang mengerjakan.</p>
                 </div>
-                <span className="text-sm text-text-primary truncate">{item.nama_siswa}</span>
-                <span className="text-sm font-medium text-text-primary text-right">
-                  {item.skor_total}
-                </span>
+              ) : (
+                ranking.map((item) => (
+                  <div
+                    key={item.user_id}
+                    className={cn(
+                      "grid grid-cols-[52px_1fr_100px] px-5 py-3 items-center",
+                      item.rank <= 3 && "bg-amber-50/40"
+                    )}
+                  >
+                    <div className="flex items-center">
+                      {item.rank <= 3 ? (
+                        <Trophy className={cn("w-4 h-4", getMedalColor(item.rank))} />
+                      ) : (
+                        <span className="text-sm text-text-muted w-6 text-center">{item.rank}</span>
+                      )}
+                    </div>
+                    <span className="text-sm font-medium text-text-primary truncate">{item.nama_siswa}</span>
+                    <span className={cn(
+                      "text-sm font-semibold text-right tabular-nums",
+                      item.rank === 1 ? "text-amber-500" : "text-text-primary"
+                    )}>
+                      {item.skor_total}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: chart + stats */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Stats cards */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white border border-border rounded-xl p-4">
+              <p className="text-xs text-text-secondary mb-1">Peserta</p>
+              <p className="text-2xl font-semibold text-text-primary font-display">{ranking.length}</p>
+            </div>
+            <div className="bg-white border border-border rounded-xl p-4">
+              <p className="text-xs text-text-secondary mb-1">Rata-rata</p>
+              <p className="text-2xl font-semibold text-text-primary font-display">{avgScore}</p>
+            </div>
+            {ranking.length > 0 && (
+              <>
+                <div className="bg-white border border-border rounded-xl p-4">
+                  <p className="text-xs text-text-secondary mb-1">Tertinggi</p>
+                  <p className="text-2xl font-semibold text-amber-500 font-display">{ranking[0]?.skor_total}</p>
+                </div>
+                <div className="bg-white border border-border rounded-xl p-4">
+                  <p className="text-xs text-text-secondary mb-1">Terendah</p>
+                  <p className="text-2xl font-semibold text-text-primary font-display">{ranking[ranking.length - 1]?.skor_total}</p>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Distribution Chart */}
+          {ranking.length > 0 && (
+            <div className="bg-white border border-border rounded-xl p-4">
+              <h2 className="text-sm font-semibold text-text-primary mb-4">Distribusi Skor</h2>
+              <div className="h-[200px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData()} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#9ca3af" }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: "#9ca3af" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <Tooltip
+                      contentStyle={{ borderRadius: "8px", border: "1px solid #e5e7eb", fontSize: "12px" }}
+                      cursor={{ fill: "#f9fafb" }}
+                    />
+                    <Bar dataKey="count" name="Siswa" fill="#1a56db" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-            ))
+            </div>
           )}
         </div>
-      </Card>
-    </Container>
+      </div>
+    </div>
   );
 }

@@ -10,6 +10,8 @@ const navItems = [
   { label: "Bank Soal", href: "/admin/questions" },
   { label: "Latihan", href: "/admin/latihan" },
   { label: "Tryout", href: "/admin/tryout" },
+  { label: "Sesi Kelas", href: "/admin/sesi" },
+  { label: "Absensi", href: "/admin/absensi" },
   { label: "Settings", href: "/admin/settings" },
 ];
 

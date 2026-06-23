@@ -7,6 +7,8 @@ const navItems = [
   { label: "Dashboard", href: "/guru/dashboard" },
   { label: "Siswa", href: "/guru/siswa" },
   { label: "Tryout", href: "/guru/tryout" },
+  { label: "Bank Soal", href: "/guru/soal" },
+  { label: "Sesi Kelas", href: "/guru/sesi" },
 ];
 
 export default function GuruLayout({ children }: { children: React.ReactNode }) {

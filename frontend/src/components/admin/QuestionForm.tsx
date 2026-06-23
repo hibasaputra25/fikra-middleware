@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuthStore } from "@/stores/authStore";
 import {
   questionAPI,
   categoryAPI,
@@ -87,7 +88,12 @@ interface QuestionFormProps {
 
 export default function QuestionForm({ questionId }: QuestionFormProps) {
   const router = useRouter();
+  const { user } = useAuthStore();
+  const isGuru = user?.role === "guru";
+
+  const [kurikulumList, setKurikulumList] = useState<Category[]>([]);
   const [subtes, setSubtes] = useState<Category[]>([]);
+  const [selectedKurikulum, setSelectedKurikulum] = useState<number | "">("");
   const [collections, setCollections] = useState<QuestionCollection[]>([]);
   const [collectionsLoading, setCollectionsLoading] = useState(true);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -97,8 +103,22 @@ export default function QuestionForm({ questionId }: QuestionFormProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [optionFeedbackOpen, setOptionFeedbackOpen] = useState<Record<number, boolean>>({});
 
+  // Load subtes saat kurikulum dipilih
   useEffect(() => {
-    categoryAPI.getByLevel("subtes").then((res) => setSubtes(res.data.data)).catch(() => {});
+    if (!selectedKurikulum) { setSubtes([]); return; }
+    categoryAPI.getSubtesByKurikulum(Number(selectedKurikulum))
+      .then(res => setSubtes(res.data.data || []))
+      .catch(() => setSubtes([]));
+    // Reset category_id kalau kurikulum berubah
+    setForm(prev => ({ ...prev, category_id: "" }));
+  }, [selectedKurikulum]);
+
+  useEffect(() => {
+    // Guru: hanya load kurikulum yang ditugaskan. Admin: load semua
+    const loadKurikulum = isGuru
+      ? categoryAPI.getMyKurikulum().then(res => res.data.data || [])
+      : categoryAPI.getAllKurikulum().then(res => res.data.data || []);
+    loadKurikulum.then(setKurikulumList).catch(() => {});
     collectionAPI
       .getAll()
       .then((res) => setCollections(res.data.data))
@@ -112,6 +132,23 @@ export default function QuestionForm({ questionId }: QuestionFormProps) {
       .getById(questionId)
       .then((res) => {
         const q: QuestionDetail = res.data;
+        // Saat edit soal: set kurikulum berdasarkan parent dari category yang ada
+        if (q.category_id) {
+          // Ambil parent (kurikulum) dari category ini
+          categoryAPI.getById(q.category_id).then(catRes => {
+            const cat = catRes.data;
+            if (cat?.parent_id) {
+              // parent adalah subtes, grandparent adalah kurikulum
+              categoryAPI.getById(cat.parent_id).then(parentRes => {
+                const parent = parentRes.data;
+                if (parent?.level === 'kurikulum') setSelectedKurikulum(parent.id);
+                else if (parent?.parent_id) setSelectedKurikulum(parent.parent_id);
+              }).catch(() => {});
+            } else if (cat?.level === 'subtes' && cat?.parent_id) {
+              setSelectedKurikulum(cat.parent_id);
+            }
+          }).catch(() => {});
+        }
         setForm({
           type: q.type,
           category_id: q.category_id ?? "",
@@ -299,6 +336,14 @@ export default function QuestionForm({ questionId }: QuestionFormProps) {
 
       if (!stripHtml(form.content)) {
         throw new Error("Konten soal wajib diisi");
+      }
+
+      if (!selectedKurikulum) {
+        throw new Error("Kurikulum wajib dipilih");
+      }
+
+      if (!form.category_id) {
+        throw new Error("Mata pelajaran / subtes wajib dipilih");
       }
 
       if (!form.collection_id) {
@@ -505,23 +550,39 @@ export default function QuestionForm({ questionId }: QuestionFormProps) {
           </div>
 
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Kurikulum — pilih dulu */}
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">Subtes</label>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">
+                Kurikulum <span className="text-danger">*</span>
+              </label>
+              <select
+                value={selectedKurikulum}
+                onChange={(e) => setSelectedKurikulum(e.target.value ? parseInt(e.target.value) : "")}
+                className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-bg-card focus:outline-none focus:ring-4 focus:ring-admin-accent/10"
+              >
+                <option value="">— Pilih kurikulum —</option>
+                {kurikulumList.map((k) => (
+                  <option key={k.id} value={k.id}>{k.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Mapel/Subtes — muncul setelah kurikulum dipilih */}
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">
+                Mata Pelajaran / Subtes <span className="text-danger">*</span>
+              </label>
               <select
                 value={form.category_id}
                 onChange={(e) =>
-                  setForm({
-                    ...form,
-                    category_id: e.target.value ? parseInt(e.target.value) : "",
-                  })
+                  setForm({ ...form, category_id: e.target.value ? parseInt(e.target.value) : "" })
                 }
-                className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-bg-card focus:outline-none focus:ring-4 focus:ring-admin-accent/10"
+                disabled={!selectedKurikulum}
+                className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-bg-card focus:outline-none focus:ring-4 focus:ring-admin-accent/10 disabled:opacity-50"
               >
-                <option value="">— Tidak dikategorikan —</option>
+                <option value="">{selectedKurikulum ? "— Pilih mapel —" : "— Pilih kurikulum dulu —"}</option>
                 {subtes.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.code} — {s.name}
-                  </option>
+                  <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
             </div>

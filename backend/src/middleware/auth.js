@@ -13,10 +13,16 @@ async function authMiddleware(req, res, next) {
     try {
         // Verifikasi token ke Moodle
         const siteInfo = await panggilAPIWithToken(token, 'core_webservice_get_site_info', {});
+
+        // Ambil role dari Moodle
+        const { getRoleUser } = require('../config/moodle');
+        const role = await getRoleUser(siteInfo.userid);
+
         req.user = {
             id: siteInfo.userid,
             username: siteInfo.username,
             nama: siteInfo.fullname,
+            role,
             token
         };
         next();
