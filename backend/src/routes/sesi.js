@@ -15,7 +15,7 @@ const {
     submitSesi,
     getStatsByGuru
 } = require('../services/sesiService');
-const { getSiswa } = require('../services/moodleService');
+const { pool } = require('../config/db');
 
 router.use(authMiddleware);
 
@@ -29,11 +29,15 @@ router.get('/', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-// GET /api/sesi/siswa — ambil daftar siswa dari Moodle (untuk absensi)
+// GET /api/sesi/siswa — daftar siswa dari tabel users lokal (untuk absensi)
 router.get('/siswa', async (req, res, next) => {
     try {
-        const siswa = await getSiswa();
-        res.json({ data: siswa });
+        const [rows] = await pool.execute(
+            `SELECT id, username, nama, email, foto_url
+             FROM users WHERE role = 'siswa' AND is_active = 1
+             ORDER BY nama ASC`
+        );
+        res.json({ data: rows });
     } catch (err) { next(err); }
 });
 

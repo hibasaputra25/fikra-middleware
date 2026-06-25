@@ -11,11 +11,13 @@ const DIFFICULTIES = ['easy', 'medium', 'hard'];
 
 async function list({
     category_id,
+    kurikulum_id,
     type,
     difficulty,
     search,
     tag_id,
     collection_id,
+    created_by,       // filter by creator (untuk guru: hanya soal sendiri)
     page = 1,
     limit = 20
 } = {}) {
@@ -32,8 +34,14 @@ async function list({
         params.push(collection_id);
     }
     if (category_id) {
+        // Filter by subtes spesifik
         conditions.push('q.category_id = ?');
         params.push(category_id);
+    } else if (kurikulum_id) {
+        // Filter by kurikulum — ambil semua soal yang category-nya adalah child dari kurikulum ini
+        // Harus pakai subquery karena LEFT JOIN categories c mungkin NULL
+        conditions.push('q.category_id IN (SELECT id FROM categories WHERE parent_id = ? AND level = \'subtes\')');
+        params.push(kurikulum_id);
     }
     if (type) {
         conditions.push('q.type = ?');
@@ -46,6 +54,10 @@ async function list({
     if (search) {
         conditions.push('q.content LIKE ?');
         params.push(`%${search}%`);
+    }
+    if (created_by) {
+        conditions.push('q.created_by = ?');
+        params.push(created_by);
     }
 
     const whereSQL = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -484,6 +496,8 @@ async function getRevision(questionId, revisionNumber) {
 // =====================================================================
 
 async function create(payload, userId = null) {
+    // Ambil created_by dari payload jika userId tidak diberikan
+    if (!userId && payload.created_by) userId = payload.created_by;
     // create harus selalu punya kategori
     if (!Array.isArray(payload.collections) || payload.collections.length === 0) {
         throw new Error('Kategori soal wajib dipilih');

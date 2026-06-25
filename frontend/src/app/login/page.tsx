@@ -30,8 +30,8 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await authAPI.login(username, password);
-      const { token, user } = res.data;
-      setAuth(user, token);
+      const { accessToken, refreshToken, user } = res.data;
+      setAuth(user, accessToken, refreshToken);
 
       // Redirect berdasarkan role
       if (user.role === "admin") {
@@ -94,7 +94,7 @@ export default function LoginPage() {
 
         <div className="relative flex items-center gap-2 text-sm text-white/50">
           <ShieldCheck className="w-4 h-4" />
-          Login aman dengan akun Moodle Fikra Academy
+          Login aman dengan enkripsi end-to-end
         </div>
       </div>
 
@@ -161,7 +161,10 @@ export default function LoginPage() {
           </form>
 
           <p className="text-center text-sm text-text-muted mt-8">
-            Belum punya akun? Hubungi admin Fikra Academy untuk mendaftar.
+            Belum punya akun?{" "}
+            <Link href="/register" className="text-primary hover:underline font-medium">
+              Daftar di sini
+            </Link>
           </p>
         </div>
       </div>

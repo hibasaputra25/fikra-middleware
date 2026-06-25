@@ -1,19 +1,28 @@
 const express = require('express');
-const router = express.Router();
+const router  = express.Router();
 const questionService = require('../services/questionService');
+const { authMiddleware, requireRole } = require('../middleware/auth');
 
-// GET /api/questions?category_id=1&type=mcq_single&difficulty=medium&search=...&page=1&limit=20
-router.get('/', async (req, res, next) => {
+// GET /api/questions
+// Admin   : semua soal
+// Guru    : hanya soal yang dibuat sendiri (created_by = req.user.id)
+// Siswa   : tidak boleh akses bank soal langsung
+router.get('/', authMiddleware, requireRole('admin', 'guru'), async (req, res, next) => {
     try {
+        const isGuru    = req.user.role === 'guru';
+        const createdBy = isGuru ? req.user.id : (req.query.created_by ? parseInt(req.query.created_by) : undefined);
+
         const result = await questionService.list({
-            category_id: req.query.category_id ? parseInt(req.query.category_id) : undefined,
-            type: req.query.type,
-            difficulty: req.query.difficulty,
-            search: req.query.search,
-            tag_id: req.query.tag_id ? parseInt(req.query.tag_id) : undefined,
+            category_id:   req.query.category_id   ? parseInt(req.query.category_id)   : undefined,
+            kurikulum_id:  req.query.kurikulum_id  ? parseInt(req.query.kurikulum_id)  : undefined,
+            type:          req.query.type,
+            difficulty:    req.query.difficulty,
+            search:        req.query.search,
+            tag_id:        req.query.tag_id        ? parseInt(req.query.tag_id)        : undefined,
             collection_id: req.query.collection_id ? parseInt(req.query.collection_id) : undefined,
-            page: req.query.page ? parseInt(req.query.page) : 1,
-            limit: req.query.limit ? Math.min(parseInt(req.query.limit), 100) : 20
+            created_by:    createdBy,
+            page:          req.query.page          ? parseInt(req.query.page)          : 1,
+            limit:         req.query.limit         ? Math.min(parseInt(req.query.limit), 100) : 20
         });
         res.json(result);
     } catch (err) {
@@ -22,7 +31,7 @@ router.get('/', async (req, res, next) => {
 });
 
 // GET /api/questions/meta — info untuk form (tipe & difficulty options)
-router.get('/meta', (req, res) => {
+router.get('/meta', authMiddleware, (req, res) => {
     res.json({
         types: questionService.QUESTION_TYPES,
         difficulties: questionService.DIFFICULTIES
@@ -30,7 +39,7 @@ router.get('/meta', (req, res) => {
 });
 
 // GET /api/questions/:id/revisions
-router.get('/:id/revisions', async (req, res, next) => {
+router.get('/:id/revisions', authMiddleware, requireRole('admin', 'guru'), async (req, res, next) => {
     try {
         const data = await questionService.listRevisions(parseInt(req.params.id));
         res.json({ data, total: data.length });
@@ -40,7 +49,7 @@ router.get('/:id/revisions', async (req, res, next) => {
 });
 
 // GET /api/questions/:id/revisions/:rev
-router.get('/:id/revisions/:rev', async (req, res, next) => {
+router.get('/:id/revisions/:rev', authMiddleware, requireRole('admin', 'guru'), async (req, res, next) => {
     try {
         const rev = await questionService.getRevision(
             parseInt(req.params.id),
@@ -54,19 +63,28 @@ router.get('/:id/revisions/:rev', async (req, res, next) => {
 });
 
 // GET /api/questions/:id
-router.get('/:id', async (req, res, next) => {
+// Guru hanya bisa lihat soal milik sendiri, admin bisa semua
+router.get('/:id', authMiddleware, requireRole('admin', 'guru'), async (req, res, next) => {
     try {
         const question = await questionService.getById(parseInt(req.params.id));
         if (!question) return res.status(404).json({ error: 'Soal tidak ditemukan' });
+
+        // Guru hanya bisa akses soal milik sendiri
+        if (req.user.role === 'guru' && question.created_by !== req.user.id) {
+            return res.status(403).json({ error: 'Akses ditolak' });
+        }
         res.json(question);
     } catch (err) {
         next(err);
     }
 });
 
-router.post('/', async (req, res, next) => {
+// POST /api/questions
+router.post('/', authMiddleware, requireRole('admin', 'guru'), async (req, res, next) => {
     try {
-        const question = await questionService.create(req.body);
+        // Otomatis set created_by ke user yang login
+        const body = { ...req.body, created_by: req.user.id };
+        const question = await questionService.create(body);
         res.status(201).json(question);
     } catch (err) {
         if (err.message.includes('wajib') || err.message.includes('minimal')) {
@@ -76,9 +94,21 @@ router.post('/', async (req, res, next) => {
     }
 });
 
-router.put('/:id', async (req, res, next) => {
+// PUT /api/questions/:id
+router.put('/:id', authMiddleware, requireRole('admin', 'guru'), async (req, res, next) => {
     try {
-        const question = await questionService.update(parseInt(req.params.id), req.body);
+        const id = parseInt(req.params.id);
+
+        // Guru hanya bisa edit soal milik sendiri
+        if (req.user.role === 'guru') {
+            const existing = await questionService.getById(id);
+            if (!existing) return res.status(404).json({ error: 'Soal tidak ditemukan' });
+            if (existing.created_by !== req.user.id) {
+                return res.status(403).json({ error: 'Akses ditolak: bukan soal Anda' });
+            }
+        }
+
+        const question = await questionService.update(id, req.body);
         res.json(question);
     } catch (err) {
         if (err.message.includes('wajib') || err.message.includes('minimal') || err.message.includes('tidak ditemukan')) {
@@ -89,9 +119,20 @@ router.put('/:id', async (req, res, next) => {
 });
 
 // DELETE /api/questions/:id (soft delete)
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', authMiddleware, requireRole('admin', 'guru'), async (req, res, next) => {
     try {
-        await questionService.remove(parseInt(req.params.id));
+        const id = parseInt(req.params.id);
+
+        // Guru hanya bisa hapus soal milik sendiri
+        if (req.user.role === 'guru') {
+            const existing = await questionService.getById(id);
+            if (!existing) return res.status(404).json({ error: 'Soal tidak ditemukan' });
+            if (existing.created_by !== req.user.id) {
+                return res.status(403).json({ error: 'Akses ditolak: bukan soal Anda' });
+            }
+        }
+
+        await questionService.remove(id);
         res.json({ success: true });
     } catch (err) {
         next(err);

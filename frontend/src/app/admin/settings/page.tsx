@@ -27,8 +27,8 @@ export default function AdminSettingsPage() {
             </div>
             <div className="flex items-center justify-between py-2 border-b border-border-light">
               <div>
-                <p className="text-sm text-text-primary">Moodle Integration</p>
-                <p className="text-xs text-text-muted mt-0.5">Webservice REST API</p>
+                <p className="text-sm text-text-primary">Auth System</p>
+                <p className="text-xs text-text-muted mt-0.5">JWT lokal (tidak bergantung Moodle)</p>
               </div>
               <Badge variant="success" dot>Active</Badge>
             </div>

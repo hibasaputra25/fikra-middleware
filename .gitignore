@@ -17,3 +17,20 @@ node_modules/
 backend/uploads/questions/*
 !backend/uploads/questions/.gitkeep
 backend/uploads/.gitkeep
+
+# Sisa ekstraksi .mbz (temporary extraction directories)
+mbz_extracted/
+
+# Session & log files dari AI tools
+session-ses_*.md
+*.xml
+!backend/schema.sql
+
+# Analisis script sementara
+backend/analyze_mbz.js
+
+# Build artifacts Next.js
+frontend/.next/
+
+# Lock files yang tidak perlu
+skills-lock.json

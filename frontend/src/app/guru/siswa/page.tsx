@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { studentAPI } from "@/lib/api";
+import { guruAPI } from "@/lib/api";
+import { useAuthStore } from "@/stores/authStore";
 import Link from "next/link";
 import { Search, ArrowRight, User, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -11,7 +12,8 @@ interface Student {
   nama: string;
   username: string;
   email: string;
-  last_access: string | null;
+  last_access?: string | null;
+  last_login_at?: string | null;
 }
 
 function InitialAvatar({ name }: { name: string }) {
@@ -37,7 +39,7 @@ function InitialAvatar({ name }: { name: string }) {
   );
 }
 
-function ActivityDot({ lastAccess }: { lastAccess: string | null }) {
+function ActivityDot({ lastAccess }: { lastAccess: string | null | undefined }) {
   if (!lastAccess) return <span className="w-2 h-2 rounded-full bg-gray-200" title="Belum pernah login" />;
   const days = Math.floor((Date.now() - new Date(lastAccess).getTime()) / (1000 * 60 * 60 * 24));
   const color = days <= 7 ? "bg-emerald-400" : days <= 30 ? "bg-amber-400" : "bg-gray-300";
@@ -46,17 +48,20 @@ function ActivityDot({ lastAccess }: { lastAccess: string | null }) {
 }
 
 export default function GuruSiswaPage() {
+  const { user } = useAuthStore();
   const [students, setStudents] = useState<Student[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadStudents();
-  }, []);
+    if (user?.id) loadStudents();
+  }, [user?.id]);
 
   const loadStudents = async () => {
+    if (!user?.id) return;
     try {
-      const res = await studentAPI.getAll();
+      // Hanya ambil siswa yang diajar guru ini
+      const res = await guruAPI.getSiswa(user.id);
       setStudents(res.data.data || []);
     } catch (err) {
       console.error("Failed to load students:", err);
@@ -71,9 +76,12 @@ export default function GuruSiswaPage() {
       s.username.toLowerCase().includes(search.toLowerCase())
   );
 
+  const getLastAccess = (s: Student) => s.last_access || s.last_login_at || null;
+
   const activeCount = students.filter((s) => {
-    if (!s.last_access) return false;
-    return Date.now() - new Date(s.last_access).getTime() < 7 * 24 * 60 * 60 * 1000;
+    const la = getLastAccess(s);
+    if (!la) return false;
+    return Date.now() - new Date(la).getTime() < 7 * 24 * 60 * 60 * 1000;
   }).length;
 
   if (loading) {
@@ -91,7 +99,7 @@ export default function GuruSiswaPage() {
         <div>
           <h1 className="text-xl font-semibold text-text-primary">Siswa</h1>
           <p className="text-sm text-text-secondary mt-0.5">
-            {students.length} siswa terdaftar
+            {students.length} siswa yang kamu ajar
             {activeCount > 0 && (
               <span className="ml-2 text-emerald-600 font-medium">
                 · {activeCount} aktif minggu ini
@@ -118,7 +126,7 @@ export default function GuruSiswaPage() {
         <div className="bg-white border border-border rounded-xl px-6 py-12 text-center">
           <Users className="w-8 h-8 text-text-muted mx-auto mb-3" />
           <p className="text-sm text-text-muted">
-            {search ? "Tidak ada siswa yang cocok." : "Belum ada siswa terdaftar."}
+            {search ? "Tidak ada siswa yang cocok." : "Kamu belum ditugaskan ke siswa manapun. Hubungi admin untuk mengatur relasi guru-siswa."}
           </p>
         </div>
       ) : (
@@ -134,8 +142,9 @@ export default function GuruSiswaPage() {
 
           <div className="divide-y divide-border-light">
             {filtered.map((student) => {
-              const lastAccessText = student.last_access
-                ? new Date(student.last_access).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })
+              const la = getLastAccess(student);
+              const lastAccessText = la
+                ? new Date(la).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })
                 : "Belum login";
               return (
                 <Link
@@ -152,7 +161,7 @@ export default function GuruSiswaPage() {
                   </div>
                   <p className="text-xs text-text-muted hidden sm:block truncate">{student.username}</p>
                   <div className="hidden sm:flex items-center gap-2">
-                    <ActivityDot lastAccess={student.last_access} />
+                    <ActivityDot lastAccess={la} />
                     <span className="text-xs text-text-muted">{lastAccessText}</span>
                   </div>
                   <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-secondary transition-colors hidden sm:block" />

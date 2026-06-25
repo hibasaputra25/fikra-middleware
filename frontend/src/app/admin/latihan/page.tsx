@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { latihanAPI, categoryAPI, questionAPI, type LatihanPaket, type Category, type QuestionListItem } from "@/lib/api";
+import { latihanAPI, categoryAPI, type LatihanPaket, type Category } from "@/lib/api";
 import Container from "@/components/layout/Container";
 import { Card, CardTitle } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
-import { Plus, Pencil, Trash2, BookOpen, Clock, X, Check, Search, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Pencil, Trash2, BookOpen, Clock, X, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import ReusableQuestionPickerModal from "@/components/admin/QuestionPickerModal";
 
 const DIFFICULTY_LABEL = { easy: "Mudah", medium: "Sedang", hard: "Sulit", mixed: "Campuran" };
 const DIFFICULTY_VARIANT = { easy: "success" as const, medium: "warning" as const, hard: "danger" as const, mixed: "info" as const };
@@ -28,6 +29,18 @@ function PaketFormModal({
   onSave: (data: Partial<LatihanPaket>) => Promise<void>;
   onClose: () => void;
 }) {
+  const kurikulumList = categories.filter(c => c.level === 'kurikulum');
+
+  // Tentukan kurikulum awal dari paket yang sedang diedit
+  const getInitialKurikulum = () => {
+    if (!paket?.category_id) return "";
+    const subtes = categories.find(c => c.id === paket.category_id);
+    return subtes?.parent_id ? String(subtes.parent_id) : "";
+  };
+
+  const [selectedKurikulum, setSelectedKurikulum] = useState<string>(getInitialKurikulum);
+  const subtesList = categories.filter(c => c.level === 'subtes' && String(c.parent_id) === selectedKurikulum);
+
   const [form, setForm] = useState({
     name: paket?.name || "",
     category_id: paket?.category_id ?? null as number | null,
@@ -76,18 +89,39 @@ function PaketFormModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-text-secondary mb-1.5">Kategori / Subtes</label>
+              <label className="block text-xs font-semibold text-text-secondary mb-1.5">Jenjang</label>
               <select
-                value={form.category_id ?? ""}
-                onChange={e => setForm(f => ({ ...f, category_id: e.target.value ? Number(e.target.value) : null }))}
+                value={selectedKurikulum}
+                onChange={e => {
+                  setSelectedKurikulum(e.target.value);
+                  setForm(f => ({ ...f, category_id: null }));
+                }}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
               >
-                <option value="">-- Tanpa kategori --</option>
-                {categories.filter(c => c.level === 'subtes').map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                <option value="">— Pilih Jenjang —</option>
+                {kurikulumList.map(k => (
+                  <option key={k.id} value={k.id}>{k.name}</option>
                 ))}
               </select>
             </div>
+            <div>
+              <label className="block text-xs font-semibold text-text-secondary mb-1.5">Mapel / Subtes</label>
+              <select
+                value={form.category_id ?? ""}
+                onChange={e => setForm(f => ({ ...f, category_id: e.target.value ? Number(e.target.value) : null }))}
+                disabled={!selectedKurikulum}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-primary disabled:opacity-50"
+              >
+                <option value="">{selectedKurikulum ? "— Semua mapel —" : "— Pilih jenjang dulu —"}</option>
+                {subtesList.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({kurikulumList.find(k => k.id === Number(selectedKurikulum))?.code || ""})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-text-secondary mb-1.5">Tingkat Kesulitan</label>
               <select
@@ -159,145 +193,7 @@ function PaketFormModal({
   );
 }
 
-// ─── Modal Kelola Soal ───────────────────────────────────────────────
-function QuestionPickerModal({
-  paket,
-  onSave,
-  onClose,
-}: {
-  paket: LatihanPaket;
-  onSave: (ids: number[]) => Promise<void>;
-  onClose: () => void;
-}) {
-  const [questions, setQuestions] = useState<QuestionListItem[]>([]);
-  const [selected, setSelected] = useState<number[]>([]);
-  const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    loadQuestions();
-    loadExisting();
-  }, []);
-
-  const loadQuestions = async () => {
-    try {
-      const params: Record<string, unknown> = { limit: 200 };
-      if (paket.category_id) params.category_id = paket.category_id;
-      const res = await questionAPI.list(params);
-      setQuestions(res.data.data || []);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadExisting = async () => {
-    try {
-      const res = await latihanAPI.getPaket(paket.id);
-      setSelected((res.data.questions || []).map((q: { id: number }) => q.id));
-    } catch {
-      // paket baru, belum ada soal
-    }
-  };
-
-  const filtered = questions.filter(q =>
-    !search || stripHtml(q.content_preview).toLowerCase().includes(search.toLowerCase())
-  );
-
-  const toggle = (id: number) => {
-    setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await onSave(selected);
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col" style={{ maxHeight: '85vh' }}>
-        <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
-          <div>
-            <h2 className="font-semibold text-text-primary">Kelola Soal — {paket.name}</h2>
-            <p className="text-xs text-text-secondary mt-0.5">{selected.length} soal dipilih</p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
-        </div>
-
-        <div className="px-6 py-3 border-b shrink-0">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Cari soal..."
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-            />
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-3">
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <p className="text-sm text-text-muted text-center py-8">Tidak ada soal ditemukan.</p>
-          ) : (
-            <div className="space-y-2">
-              {filtered.map(q => {
-                const isSelected = selected.includes(q.id);
-                return (
-                  <button
-                    key={q.id}
-                    onClick={() => toggle(q.id)}
-                    className={cn(
-                      "w-full text-left flex items-start gap-3 p-3 rounded-xl border-2 transition-all",
-                      isSelected
-                        ? "border-primary bg-primary/5"
-                        : "border-gray-200 hover:border-gray-300"
-                    )}
-                  >
-                    <div className={cn(
-                      "w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5",
-                      isSelected ? "border-primary bg-primary" : "border-gray-300"
-                    )}>
-                      {isSelected && <Check className="w-3 h-3 text-white" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-text-primary line-clamp-2">
-                        {stripHtml(q.content_preview)}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="neutral" className="text-xs">{q.type}</Badge>
-                        {q.category_name && (
-                          <span className="text-xs text-text-muted">{q.category_name}</span>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="px-6 py-4 border-t shrink-0 flex gap-3">
-          <Button variant="outline" className="flex-1" onClick={onClose}>Batal</Button>
-          <Button variant="primary" className="flex-1" loading={saving} onClick={handleSave}>
-            Simpan ({selected.length} soal)
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// QuestionPickerModal lama digantikan oleh komponen reusable
 
 // ─── Main Page ───────────────────────────────────────────────────────
 export default function AdminLatihanPage() {
@@ -307,6 +203,8 @@ export default function AdminLatihanPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingPaket, setEditingPaket] = useState<LatihanPaket | null>(null);
   const [managingQuestions, setManagingQuestions] = useState<LatihanPaket | null>(null);
+  const [existingQuestionIds, setExistingQuestionIds] = useState<number[]>([]);
+  const [loadingExisting, setLoadingExisting] = useState(false);
   const [expandedCat, setExpandedCat] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -355,6 +253,20 @@ export default function AdminLatihanPage() {
     await loadData();
   };
 
+  const openManageQuestions = async (paket: LatihanPaket) => {
+    setLoadingExisting(true);
+    setManagingQuestions(paket);
+    try {
+      const res = await latihanAPI.getPaket(paket.id);
+      const ids = (res.data.questions || []).map((q: { id: number }) => q.id);
+      setExistingQuestionIds(ids);
+    } catch {
+      setExistingQuestionIds([]);
+    } finally {
+      setLoadingExisting(false);
+    }
+  };
+
   // Kelompokkan paket per kategori
   const grouped: Record<string, { label: string; pakets: LatihanPaket[] }> = {};
   pakets.forEach(p => {
@@ -377,12 +289,24 @@ export default function AdminLatihanPage() {
         />
       )}
 
-      {managingQuestions && (
-        <QuestionPickerModal
-          paket={managingQuestions}
+      {managingQuestions && !loadingExisting && (
+        <ReusableQuestionPickerModal
+          title={`Kelola Soal — ${managingQuestions.name}`}
+          mode="replace"
+          existingIds={existingQuestionIds}
+          defaultCategoryId={managingQuestions.category_id}
           onSave={handleSetQuestions}
-          onClose={() => setManagingQuestions(null)}
+          onClose={() => { setManagingQuestions(null); setExistingQuestionIds([]); }}
         />
+      )}
+      {managingQuestions && loadingExisting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative bg-white rounded-2xl px-8 py-6 flex items-center gap-3 shadow-xl">
+            <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm text-text-primary">Memuat soal yang sudah ada...</span>
+          </div>
+        </div>
       )}
 
       {/* Header */}
@@ -458,7 +382,7 @@ export default function AdminLatihanPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setManagingQuestions(paket)}
+                          onClick={() => openManageQuestions(paket)}
                         >
                           <BookOpen className="w-3.5 h-3.5 mr-1" />
                           Soal

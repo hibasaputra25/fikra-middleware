@@ -10,7 +10,7 @@ const api = axios.create({
   },
 });
 
-// Intercept request untuk inject token
+// Intercept request — inject access token
 api.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
     const token = localStorage.getItem("fikra_token");
@@ -21,17 +21,93 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Intercept response untuk handle 401
+// Flag untuk mencegah multiple refresh sekaligus
+let isRefreshing = false;
+let refreshQueue: Array<(token: string) => void> = [];
+
+function processQueue(newToken: string) {
+  refreshQueue.forEach((cb) => cb(newToken));
+  refreshQueue = [];
+}
+
+// Intercept response — auto-refresh saat TOKEN_EXPIRED
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
+  async (error) => {
+    const original = error.config;
+    const code = error.response?.data?.code;
+    const status = error.response?.status;
+
+    // Jika 401 TOKEN_EXPIRED dan belum pernah retry
+    if (status === 401 && code === "TOKEN_EXPIRED" && !original._retry) {
+      original._retry = true;
+
+      if (typeof window === "undefined") return Promise.reject(error);
+
+      const refreshToken = localStorage.getItem("fikra_refresh_token");
+      if (!refreshToken) {
+        // Tidak ada refresh token — paksa logout
+        localStorage.removeItem("fikra_token");
+        localStorage.removeItem("fikra_refresh_token");
+        localStorage.removeItem("fikra_user");
+        window.location.href = "/login";
+        return Promise.reject(error);
+      }
+
+      if (isRefreshing) {
+        // Tunggu refresh yang sedang berjalan
+        return new Promise((resolve) => {
+          refreshQueue.push((token: string) => {
+            original.headers.Authorization = `Bearer ${token}`;
+            resolve(api(original));
+          });
+        });
+      }
+
+      isRefreshing = true;
+      try {
+        const res = await axios.post(`${API_BASE}/auth/refresh`, {
+          refresh_token: refreshToken,
+        });
+        const { accessToken, refreshToken: newRefresh } = res.data;
+
+        // Update storage dan store
+        localStorage.setItem("fikra_token", accessToken);
+        localStorage.setItem("fikra_refresh_token", newRefresh);
+
+        // Update zustand store jika tersedia
+        try {
+          const { useAuthStore } = await import("@/stores/authStore");
+          useAuthStore.getState().setToken(accessToken);
+        } catch {
+          // store tidak tersedia (SSR)
+        }
+
+        processQueue(accessToken);
+        original.headers.Authorization = `Bearer ${accessToken}`;
+        return api(original);
+      } catch {
+        // Refresh gagal — paksa logout
+        localStorage.removeItem("fikra_token");
+        localStorage.removeItem("fikra_refresh_token");
+        localStorage.removeItem("fikra_user");
+        window.location.href = "/login";
+        return Promise.reject(error);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    // 401 biasa (bukan expired) — redirect login
+    if (status === 401 && !original._retry) {
       if (typeof window !== "undefined") {
         localStorage.removeItem("fikra_token");
+        localStorage.removeItem("fikra_refresh_token");
         localStorage.removeItem("fikra_user");
         window.location.href = "/login";
       }
     }
+
     return Promise.reject(error);
   }
 );
@@ -40,13 +116,174 @@ api.interceptors.response.use(
 export const authAPI = {
   login: (username: string, password: string) =>
     api.post("/auth/login", { username, password }),
+  register: (data: { username: string; email: string; password: string; nama: string; role?: string }) =>
+    api.post("/auth/register", data),
+  refresh: (refresh_token: string) =>
+    api.post("/auth/refresh", { refresh_token }),
+  logout: (refresh_token: string) =>
+    api.post("/auth/logout", { refresh_token }),
   me: () => api.get("/auth/me"),
+  updateProfile: (data: { nama?: string; email?: string; foto_url?: string }) =>
+    api.put("/auth/profile", data),
+  changePassword: (data: { old_password: string; new_password: string }) =>
+    api.put("/auth/change-password", data),
+  adminResetPassword: (userId: number, new_password: string) =>
+    api.put(`/auth/admin/reset-password/${userId}`, { new_password }),
+  verifyEmail: (token: string) =>
+    api.get(`/auth/verify-email?token=${token}`),
+  resendVerification: (email: string) =>
+    api.post("/auth/resend-verification", { email }),
+};
+
+// Invite Codes
+export const inviteCodeAPI = {
+  list: () => api.get("/invite-codes"),
+  create: (data: { kurikulum_id?: number; max_uses?: number; expires_at?: string; prefix?: string }) =>
+    api.post("/invite-codes", data),
+  validate: (code: string) => api.get(`/invite-codes/validate/${code}`),
+  sendEmail: (id: number, data: { email: string; nama?: string }) =>
+    api.post(`/invite-codes/${id}/send-email`, data),
+  deactivate: (id: number) => api.patch(`/invite-codes/${id}/deactivate`),
+  delete: (id: number) => api.delete(`/invite-codes/${id}`),
+};
+
+// Payment
+export const paymentAPI = {
+  plans: () => api.get("/payment/plans"),
+  subscription: () => api.get("/payment/subscription"),
+  createOrder: (data: { plan: string; duration_months: number }) =>
+    api.post("/payment/create-order", data),
+  status: (orderId: string) => api.get(`/payment/status/${orderId}`),
+  history: () => api.get("/payment/history"),
+};
+
+// Chat usage
+export const chatUsageAPI = {
+  usage: () => api.get("/chat/usage"),
 };
 
 // Quizzes
+export interface TryoutSection {
+  id: number;
+  name: string;
+  sort_order: number;
+  total_questions: number;
+}
+
+export interface TryoutSummary {
+  id: number;
+  name: string;
+  type: string;
+  status: string;
+  status_jadwal?: string;  // open | upcoming | closed
+  duration_minutes: number | null;
+  start_at?: string | null;
+  end_at?: string | null;
+  section_count: number;
+  total_questions: number;
+  created_at: string;
+  description?: string | null;
+}
+
+// Extended types for detail view
+export interface TryoutSectionQuestion {
+  tsq_id: number;
+  question_id: number;
+  sort_order: number;
+  marks: number;
+  penalty: number;
+  type: string;
+  difficulty: string;
+  content_preview: string;
+  category_code: string | null;
+  category_name: string | null;
+}
+
+export interface TryoutSectionDetail extends TryoutSection {
+  category_id?: number | null;
+  questions: TryoutSectionQuestion[];
+}
+
+export interface TryoutDetail {
+  id: number;
+  name: string;
+  type: string;
+  status: string;
+  description: string | null;
+  duration_minutes: number | null;
+  start_at: string | null;
+  end_at: string | null;
+  max_attempts: number;
+  shuffle_questions: number;
+  shuffle_options: number;
+  show_review: number;
+  show_explanation: number;
+  passing_score: number | null;
+  created_at: string;
+  sections: TryoutSectionDetail[];
+}
+
+export interface TryoutAttemptAdmin {
+  id: number;
+  user_id: number;
+  attempt_number: number;
+  status: 'in_progress' | 'submitted' | 'expired' | 'abandoned';
+  started_at: string;
+  finished_at: string | null;
+  time_spent_seconds: number;
+  total_score: number | null;
+  due_at: string | null;
+  nama: string;
+  username: string;
+}
+
+export interface TryoutAttemptsResponse {
+  total: number;
+  submitted: number;
+  in_progress: number;
+  avg_score: number | null;
+  data: TryoutAttemptAdmin[];
+}
+
 export const quizAPI = {
   getAll: () => api.get("/quizzes"),
   getById: (id: number) => api.get(`/quizzes/${id}`),
+
+  // Admin — list
+  adminGetAll: () =>
+    api.get<{ total: number; data: TryoutSummary[] }>("/quizzes/admin/all"),
+  adminCreate: (data: { name: string; type?: string; duration_minutes?: number | null }) =>
+    api.post<TryoutSummary>("/quizzes/admin", data),
+
+  // Admin — detail & settings
+  adminGetById: (id: number) =>
+    api.get<TryoutDetail>(`/quizzes/admin/${id}`),
+  adminUpdate: (id: number, data: Partial<TryoutDetail>) =>
+    api.put<TryoutDetail>(`/quizzes/admin/${id}`, data),
+  adminDelete: (id: number) =>
+    api.delete(`/quizzes/admin/${id}`),
+
+  // Admin — sections
+  adminGetSections: (tryoutId: number) =>
+    api.get<{ data: TryoutSection[] }>(`/quizzes/admin/${tryoutId}/sections`),
+  adminAddSection: (tryoutId: number, name: string) =>
+    api.post(`/quizzes/admin/${tryoutId}/sections`, { name }),
+  adminRenameSection: (sectionId: number, name: string) =>
+    api.put(`/quizzes/admin/section/${sectionId}`, { name }),
+  adminDeleteSection: (sectionId: number) =>
+    api.delete(`/quizzes/admin/section/${sectionId}`),
+
+  // Admin — section questions
+  adminAppendToSection: (sectionId: number, question_ids: number[]) =>
+    api.post<{ success: boolean; added: number }>(`/quizzes/admin/section/${sectionId}/questions/append`, { question_ids }),
+  adminRemoveQuestion: (sectionId: number, questionId: number) =>
+    api.delete(`/quizzes/admin/section/${sectionId}/questions/${questionId}`),
+  adminUpdateQuestion: (sectionId: number, questionId: number, data: { marks?: number; penalty?: number; sort_order?: number }) =>
+    api.put(`/quizzes/admin/section/${sectionId}/questions/${questionId}`, data),
+
+  // Admin — attempts / monitoring
+  adminGetAttempts: (tryoutId: number) =>
+    api.get<TryoutAttemptsResponse>(`/quizzes/admin/${tryoutId}/attempts`),
 };
 
 // Students
@@ -57,10 +294,75 @@ export const studentAPI = {
 };
 
 // Results
+// Tryout play types
+export interface TryoutPlayQuestion {
+  question_id: number;
+  section_id: number;
+  section_name: string;
+  sort_order: number;
+  marks: number;
+  penalty: number;
+  type: string;
+  content: string;
+  difficulty: string;
+  explanation: string | null;
+  options: Array<{ id: number; content: string; sort_order: number; is_correct?: number }>;
+  // after submit (review mode):
+  student_answer?: {
+    answer: { selected_options: number[]; text: string | null };
+    is_correct: number | null;
+    marks_earned: number | null;
+    is_flagged: number;
+  } | null;
+}
+
+export interface TryoutAttempt {
+  id: number;
+  tryout_id: number;
+  user_id: number;
+  attempt_number: number;
+  status: 'in_progress' | 'submitted' | 'expired' | 'abandoned';
+  started_at: string;
+  due_at: string | null;
+  finished_at: string | null;
+  time_spent_seconds: number;
+  total_score: number | null;
+  score_per_section: Record<string, { correct: number; total: number; marks: number }> | null;
+  tryout_name?: string;
+  show_review?: number;
+  show_explanation?: number;
+}
+
+export const tryoutPlayAPI = {
+  start: (tryoutId: number) =>
+    api.post<{ attempt: TryoutAttempt; questions: TryoutPlayQuestion[]; answers: Array<{ question_id: number; answer: { selected_options: number[]; text: string | null }; is_flagged: number }>; is_new: boolean }>(`/quizzes/${tryoutId}/start`),
+
+  saveAnswer: (attemptId: number, data: {
+    question_id: number;
+    section_id: number;
+    selected_option_ids?: number[];
+    answer_text?: string;
+    is_flagged?: boolean;
+  }) => api.post<{ success: boolean }>(`/quizzes/attempt/${attemptId}/answer`, data),
+
+  submit: (attemptId: number) =>
+    api.post<{ success: boolean; total_score: number; attempt_id: number }>(`/quizzes/attempt/${attemptId}/submit`),
+
+  getAttempt: (attemptId: number) =>
+    api.get<{ attempt: TryoutAttempt; questions: TryoutPlayQuestion[] }>(`/quizzes/attempt/${attemptId}`),
+};
+
 export const resultAPI = {
   get: (userId: number, quizId: number, refresh?: boolean) =>
     api.get(`/results/${userId}/${quizId}${refresh ? "?refresh=true" : ""}`),
   getRanking: (quizId: number) => api.get(`/results/ranking/${quizId}`),
+  getMe: () =>
+    api.get<{ total: number; data: Array<{
+      id: number; tryout_id: number; attempt_number: number;
+      status: string; started_at: string; finished_at: string | null;
+      time_spent_seconds: number; total_score: number | null;
+      tryout_name: string; tryout_type: string;
+    }> }>("/results/me"),
 };
 
 // Sesi Kelas
@@ -133,8 +435,6 @@ export const sesiAPI = {
   delete: (id: number) => api.delete(`/sesi/${id}`),
   submit: (id: number, data: { absensi: SesiAbsensi[]; report: SesiReport; catatan_siswa: SesiCatatanSiswa[] }) =>
     api.post<SesiDetail>(`/sesi/${id}/submit`, data),
-  submit: (id: number, data: { absensi: SesiAbsensi[]; report: SesiReport; catatan_siswa: SesiCatatanSiswa[] }) =>
-    api.post<SesiDetail>(`/sesi/${id}/submit`, data),
   saveAbsensi: (id: number, absensi: SesiAbsensi[]) =>
     api.put(`/sesi/${id}/absensi`, { absensi }),
   saveReport: (id: number, report: SesiReport) =>
@@ -199,8 +499,15 @@ export const categoryAPI = {
     api.get<{ data: Category[]; total: number }>(`/categories?parent_id=${parentId}`),
   getById: (id: number) => api.get<Category>(`/categories/${id}`),
   getAllKurikulum: () => api.get<{ data: Category[] }>("/categories/kurikulum"),
-  getSubtesByKurikulum: (kurikulumId: number) =>
-    api.get<{ data: Category[] }>(`/categories?parent_id=${kurikulumId}&level=subtes`),
+  getSubtesByKurikulum: (kurikulumId: number, kurikulumName?: string) =>
+    api.get<{ data: (Category & { kurikulum_name?: string })[] }>(`/categories?parent_id=${kurikulumId}&level=subtes`)
+      .then(res => ({
+        ...res,
+        data: {
+          ...res.data,
+          data: (res.data.data || []).map(s => ({ ...s, kurikulum_name: kurikulumName }))
+        }
+      })),
   create: (data: Partial<Category>) => api.post<Category>("/categories", data),
   update: (id: number, data: Partial<Category>) => api.put<Category>(`/categories/${id}`, data),
   remove: (id: number) => api.delete(`/categories/${id}`),
@@ -334,6 +641,7 @@ export interface QuestionRevisionListItem {
 export const questionAPI = {
   list: (params?: {
     category_id?: number;
+    kurikulum_id?: number;
     type?: QuestionType;
     difficulty?: Difficulty;
     search?: string;
@@ -360,6 +668,51 @@ export const questionAPI = {
     api.get<{ data: QuestionRevisionListItem[] }>(`/questions/${id}/revisions`),
   getRevision: (id: number, rev: number) =>
     api.get(`/questions/${id}/revisions/${rev}`),
+};
+
+// Imports
+export interface ImportLog {
+  id: number;
+  filename: string;
+  format: 'moodle_xml' | 'csv' | 'excel';
+  status: 'success' | 'partial' | 'failed';
+  total_parsed: number;
+  total_inserted: number;
+  total_skipped: number;
+  total_errors: number;
+  category_id: number | null;
+  category_name?: string | null;
+  category_code?: string | null;
+  errors: string[];
+  created_at: string;
+}
+
+export interface ImportResult {
+  success: boolean;
+  filename: string;
+  format: string;
+  total_parsed: number;
+  total_inserted: number;
+  total_skipped: number;
+  total_errors: number;
+  errors: string[];
+}
+
+export const importAPI = {
+  uploadQuestions: (file: File, categoryId?: number | null, collectionId?: number | null) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (categoryId) fd.append('category_id', String(categoryId));
+    if (collectionId) fd.append('collection_id', String(collectionId));
+    return api.post<ImportResult>('/imports/questions', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+  getLogs: (limit = 20) =>
+    api.get<{ data: ImportLog[]; total: number }>(`/imports/logs?limit=${limit}`),
+  downloadTemplate: () => {
+    window.open(`${API_BASE}/imports/template/csv`, '_blank');
+  }
 };
 
 // Latihan
@@ -441,6 +794,8 @@ export const latihanAPI = {
   adminDelete: (id: number) => api.delete(`/latihan/admin/paket/${id}`),
   adminSetQuestions: (paketId: number, question_ids: number[]) =>
     api.put(`/latihan/admin/paket/${paketId}/questions`, { question_ids }),
+  adminAppendQuestions: (paketId: number, question_ids: number[]) =>
+    api.post<{ success: boolean; added: number }>(`/latihan/admin/paket/${paketId}/questions/append`, { question_ids }),
 };
 
 // Tags
@@ -547,9 +902,29 @@ export const quizPlayerAPI = {
 // Guru management (admin)
 export const guruAPI = {
   getAll: () => api.get<{ data: Array<{ id: number; nama: string; username: string; email: string; last_access: string | null }> }>('/students/guru/list'),
+
+  // Kurikulum guru
   getKurikulum: (userId: number) => api.get<{ data: Category[] }>(`/students/guru/${userId}/kurikulum`),
   setKurikulum: (userId: number, kurikulum_ids: number[]) =>
     api.put<{ data: Category[] }>(`/students/guru/${userId}/kurikulum`, { kurikulum_ids }),
+
+  // Siswa yang diajar guru
+  getSiswa: (guruId: number) =>
+    api.get<{ data: Array<{ id: number; nama: string; username: string; email: string }>; total: number }>(`/students/guru/${guruId}/siswa`),
+  setSiswa: (guruId: number, siswa_ids: number[]) =>
+    api.put<{ data: Array<{ id: number; nama: string; username: string }>; total: number }>(`/students/guru/${guruId}/siswa`, { siswa_ids }),
+};
+
+// Siswa jenjang + guru management
+export const siswaAPI = {
+  getJenjang: (siswaId: number) =>
+    api.get<{ data: Array<{ id: number; kurikulum_id: number; kurikulum_name: string; kurikulum_code: string }> }>(`/students/${siswaId}/jenjang`),
+  setJenjang: (siswaId: number, kurikulum_ids: number[]) =>
+    api.put<{ data: Array<{ kurikulum_id: number; kurikulum_name: string }> }>(`/students/${siswaId}/jenjang`, { kurikulum_ids }),
+  getGuru: (siswaId: number) =>
+    api.get<{ data: Array<{ id: number; nama: string; username: string; email: string }> }>(`/students/${siswaId}/guru`),
+  setGuru: (siswaId: number, guru_ids: number[]) =>
+    api.put<{ data: Array<{ id: number; nama: string; username: string }> }>(`/students/${siswaId}/guru`, { guru_ids }),
 };
 
 // Uploads

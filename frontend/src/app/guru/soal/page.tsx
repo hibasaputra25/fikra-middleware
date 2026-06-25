@@ -70,20 +70,24 @@ export default function GuruSoalPage() {
   }, [filterKurikulum]);
 
   const load = useCallback(async () => {
+    if (!user?.id) return;
     setLoading(true);
     try {
       const res = await questionAPI.list({
         page, limit: 20,
         search: search || undefined,
-        category_id: filterCategory || undefined,
-        difficulty: filterDifficulty || undefined,
+        category_id:  filterCategory    || undefined,
+        kurikulum_id: (!filterCategory && filterKurikulum) ? filterKurikulum : undefined,
+        difficulty:   filterDifficulty  || undefined,
+        // Backend auto-filter by created_by untuk role guru
+        // tidak perlu kirim explicitly karena middleware sudah handle
       });
       setItems(res.data.data);
       setTotalPages(res.data.total_pages);
       setTotal(res.data.total);
     } catch { console.error("Failed to load"); }
     finally { setLoading(false); }
-  }, [page, search, filterCategory, filterDifficulty]);
+  }, [page, search, filterCategory, filterKurikulum, filterDifficulty, user?.id]);
 
   useEffect(() => { load(); }, [load]);
 

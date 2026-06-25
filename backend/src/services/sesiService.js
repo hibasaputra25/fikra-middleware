@@ -153,13 +153,33 @@ async function saveAbsensi(sesiId, absensiList) {
 
     if (!absensiList || absensiList.length === 0) return;
 
-    const values = absensiList.map(() => '(?, ?, ?, ?, ?)').join(', ');
-    const params = absensiList.flatMap(a => [
+    // Resolve nama_siswa dari users jika user_id ada tapi nama_siswa kosong
+    const resolvedList = await Promise.all(absensiList.map(async a => {
+        let namaSiswa = a.nama_siswa || null;
+        if (!namaSiswa && a.user_id) {
+            try {
+                const [[user]] = await pool.execute(
+                    'SELECT nama FROM users WHERE id = ? LIMIT 1',
+                    [a.user_id]
+                );
+                if (user) namaSiswa = user.nama;
+            } catch { /* pakai null */ }
+        }
+        return {
+            user_id:    a.user_id    || null,
+            nama_siswa: namaSiswa    || `Siswa #${a.user_id || '?'}`,
+            status:     a.status    || 'hadir',
+            catatan:    a.catatan   || null,
+        };
+    }));
+
+    const values = resolvedList.map(() => '(?, ?, ?, ?, ?)').join(', ');
+    const params = resolvedList.flatMap(a => [
         sesiId,
         a.user_id,
         a.nama_siswa,
-        a.status || 'hadir',
-        a.catatan || null
+        a.status,
+        a.catatan
     ]);
 
     await pool.execute(

@@ -1,6 +1,11 @@
 const Groq = require('groq-sdk');
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// Lazy init — hindari error saat module di-load tanpa env
+let _groq = null;
+function getGroq() {
+    if (!_groq) _groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    return _groq;
+}
 const MODEL = 'llama-3.3-70b-versatile';
 
 // Buat system prompt dinamis berdasarkan data siswa
@@ -43,7 +48,7 @@ Panduan menjawab:
 async function chat(messages, namaSiswa, nilaiPerSubtes) {
     const systemPrompt = buildSystemPrompt(namaSiswa, nilaiPerSubtes);
 
-    const completion = await groq.chat.completions.create({
+    const completion = await getGroq().chat.completions.create({
         messages: [
             { role: 'system', content: systemPrompt },
             ...messages
@@ -78,7 +83,7 @@ Berikan:
 
 Gunakan gaya bahasa pelatih yang tegas, penuh energi, sedikit gen-z tapi tetap sopan.`;
 
-    const completion = await groq.chat.completions.create({
+    const completion = await getGroq().chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
         model: MODEL,
         temperature: 0.7,

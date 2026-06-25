@@ -10,6 +10,7 @@ const navItems = [
   { label: "Latihan", href: "/siswa/latihan" },
   { label: "Riwayat", href: "/siswa/riwayat" },
   { label: "Chat", href: "/siswa/chat" },
+  { label: "Premium", href: "/siswa/subscription" },
 ];
 
 export default function SiswaLayout({ children }: { children: React.ReactNode }) {

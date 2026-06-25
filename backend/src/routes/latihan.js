@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, requireRole } = require('../middleware/auth');
 const {
     getPaketByKategori,
     getPaketById,
@@ -21,9 +21,15 @@ const {
 
 // GET /api/latihan
 // Daftar semua paket dikelompokkan per kategori
+// Siswa: hanya paket dari guru yang mengajar mereka + admin
+// Guru : hanya paket yang mereka buat sendiri
+// Admin: semua paket
 router.get('/', authMiddleware, async (req, res, next) => {
     try {
-        const data = await getPaketByKategori();
+        const { role, id } = req.user;
+        let userId = null;
+        if (role === 'siswa') userId = id;  // filter by guru yang mengajar
+        const data = await getPaketByKategori(userId);
         res.json({ data });
     } catch (err) {
         next(err);
@@ -70,18 +76,25 @@ router.post('/paket/:paketId/start', authMiddleware, async (req, res, next) => {
 router.post('/attempt/:attemptId/answer', authMiddleware, async (req, res, next) => {
     try {
         const attemptId = parseInt(req.params.attemptId);
-        const { question_id, selected_option_ids, answer_text, is_flagged } = req.body;
+        const { question_id, selected_option_ids, answer_text, is_flagged, sequence_token } = req.body;
 
         if (!question_id) return res.status(400).json({ error: 'question_id wajib diisi' });
 
         await saveAnswer(attemptId, question_id, {
             selected_option_ids,
             answer_text,
-            is_flagged
+            is_flagged,
+            sequence_token
         });
 
         res.json({ success: true });
     } catch (err) {
+        if (err.message === 'Waktu pengerjaan sudah habis') {
+            return res.status(403).json({ error: err.message, code: 'TIME_EXPIRED' });
+        }
+        if (err.message === 'Token tidak valid') {
+            return res.status(400).json({ error: err.message, code: 'INVALID_TOKEN' });
+        }
         next(err);
     }
 });
@@ -94,6 +107,15 @@ router.post('/attempt/:attemptId/submit', authMiddleware, async (req, res, next)
         const result = await submitAttempt(attemptId, req.user.id);
         res.json({ success: true, ...result });
     } catch (err) {
+        if (err.message === 'Waktu pengerjaan sudah habis') {
+            return res.status(403).json({ error: err.message, code: 'TIME_EXPIRED' });
+        }
+        if (err.message === 'Attempt sudah disubmit') {
+            return res.status(409).json({ error: err.message, code: 'ALREADY_SUBMITTED' });
+        }
+        if (err.message === 'Attempt sudah berakhir') {
+            return res.status(409).json({ error: err.message, code: 'ATTEMPT_ABANDONED' });
+        }
         next(err);
     }
 });
@@ -116,7 +138,7 @@ router.get('/attempt/:attemptId/result', authMiddleware, async (req, res, next) 
 
 // GET /api/latihan/admin/paket
 // List semua paket untuk admin (termasuk yang tidak aktif)
-router.get('/admin/paket', authMiddleware, async (req, res, next) => {
+router.get('/admin/paket', authMiddleware, requireRole('admin', 'guru'), async (req, res, next) => {
     try {
         const { pool } = require('../config/db');
         const [rows] = await pool.execute(`
@@ -136,7 +158,7 @@ router.get('/admin/paket', authMiddleware, async (req, res, next) => {
 
 // POST /api/latihan/admin/paket
 // Buat paket baru
-router.post('/admin/paket', authMiddleware, async (req, res, next) => {
+router.post('/admin/paket', authMiddleware, requireRole('admin', 'guru'), async (req, res, next) => {
     try {
         const id = await createPaket({ ...req.body, created_by: req.user.id });
         const paket = await getPaketById(id);
@@ -148,7 +170,7 @@ router.post('/admin/paket', authMiddleware, async (req, res, next) => {
 
 // PUT /api/latihan/admin/paket/:paketId
 // Update paket
-router.put('/admin/paket/:paketId', authMiddleware, async (req, res, next) => {
+router.put('/admin/paket/:paketId', authMiddleware, requireRole('admin', 'guru'), async (req, res, next) => {
     try {
         const paketId = parseInt(req.params.paketId);
         await updatePaket(paketId, req.body);
@@ -161,7 +183,7 @@ router.put('/admin/paket/:paketId', authMiddleware, async (req, res, next) => {
 
 // DELETE /api/latihan/admin/paket/:paketId
 // Hapus paket
-router.delete('/admin/paket/:paketId', authMiddleware, async (req, res, next) => {
+router.delete('/admin/paket/:paketId', authMiddleware, requireRole('admin', 'guru'), async (req, res, next) => {
     try {
         await deletePaket(parseInt(req.params.paketId));
         res.json({ success: true });
@@ -172,7 +194,7 @@ router.delete('/admin/paket/:paketId', authMiddleware, async (req, res, next) =>
 
 // PUT /api/latihan/admin/paket/:paketId/questions
 // Set soal dalam paket (replace all)
-router.put('/admin/paket/:paketId/questions', authMiddleware, async (req, res, next) => {
+router.put('/admin/paket/:paketId/questions', authMiddleware, requireRole('admin', 'guru'), async (req, res, next) => {
     try {
         const paketId = parseInt(req.params.paketId);
         const { question_ids } = req.body;
@@ -183,6 +205,51 @@ router.put('/admin/paket/:paketId/questions', authMiddleware, async (req, res, n
 
         await setPaketQuestions(paketId, question_ids);
         res.json({ success: true, total: question_ids.length });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// POST /api/latihan/admin/paket/:paketId/questions/append
+// Tambah soal ke paket (tanpa hapus yang sudah ada)
+router.post('/admin/paket/:paketId/questions/append', authMiddleware, requireRole('admin', 'guru'), async (req, res, next) => {
+    try {
+        const paketId = parseInt(req.params.paketId);
+        const { question_ids } = req.body;
+
+        if (!Array.isArray(question_ids) || question_ids.length === 0) {
+            return res.status(400).json({ error: 'question_ids harus berupa array tidak kosong' });
+        }
+
+        const { pool } = require('../config/db');
+
+        // Ambil sort_order tertinggi yang sudah ada
+        const [[{ maxOrder }]] = await pool.execute(
+            'SELECT COALESCE(MAX(sort_order), 0) as maxOrder FROM latihan_paket_questions WHERE paket_id = ?',
+            [paketId]
+        );
+
+        // Insert soal baru (skip duplikat)
+        let added = 0;
+        for (let i = 0; i < question_ids.length; i++) {
+            const qId = parseInt(question_ids[i]);
+            try {
+                await pool.execute(
+                    `INSERT IGNORE INTO latihan_paket_questions (paket_id, question_id, sort_order, marks)
+                     VALUES (?, ?, ?, 1.00)`,
+                    [paketId, qId, maxOrder + i + 1]
+                );
+                added++;
+            } catch { /* skip */ }
+        }
+
+        // Update total_questions
+        await pool.execute(
+            'UPDATE latihan_paket SET total_questions = (SELECT COUNT(*) FROM latihan_paket_questions WHERE paket_id = ?) WHERE id = ?',
+            [paketId, paketId]
+        );
+
+        res.json({ success: true, added });
     } catch (err) {
         next(err);
     }
