@@ -8,6 +8,7 @@ const navItems = [
   { label: "Dashboard", href: "/siswa/dashboard" },
   { label: "Tryout", href: "/siswa/tryout" },
   { label: "Latihan", href: "/siswa/latihan" },
+  { label: "Materi", href: "/siswa/materi" },
   { label: "Riwayat", href: "/siswa/riwayat" },
   { label: "Chat", href: "/siswa/chat" },
   { label: "Premium", href: "/siswa/subscription" },

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { sesiAPI, type SesiAbsensi, type SesiReport, type SesiCatatanSiswa } from "@/lib/api";
 import Button from "@/components/ui/Button";
+import AlertModal, { useAlertModal } from "@/components/ui/AlertModal";
 import { ArrowLeft, ChevronRight, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +51,7 @@ function StepDot({ current, step, label }: { current: Step; step: Step; label: s
 
 export default function NewSesiPage() {
   const router = useRouter();
+  const { alertProps, showAlert } = useAlertModal();
   const [step, setStep] = useState<Step>(1);
   const [sesiId, setSesiId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -107,14 +109,14 @@ export default function NewSesiPage() {
   const handleStep1 = async () => {
     const mapelFinal = identitas.mapel === "Lainnya" ? identitas.mapel_custom.trim() : identitas.mapel;
     if (!identitas.tanggal || !identitas.jenjang || !mapelFinal) {
-      alert("Lengkapi semua field."); return;
+      showAlert("Lengkapi semua field sebelum melanjutkan.", "warning", "Field Belum Lengkap"); return;
     }
     setSaving(true);
     try {
       const res = await sesiAPI.create({ tanggal: identitas.tanggal, jenjang: identitas.jenjang, mapel: mapelFinal, durasi_menit: identitas.durasi_menit });
       setSesiId(res.data.id);
       setStep(2);
-    } catch { alert("Gagal membuat sesi."); }
+    } catch { showAlert("Gagal membuat sesi. Coba lagi.", "error", "Gagal"); }
     finally { setSaving(false); }
   };
 
@@ -124,18 +126,18 @@ export default function NewSesiPage() {
     try {
       await sesiAPI.saveAbsensi(sesiId, Object.values(absensi));
       setStep(3);
-    } catch { alert("Gagal menyimpan absensi."); }
+    } catch { showAlert("Gagal menyimpan absensi. Coba lagi.", "error", "Gagal"); }
     finally { setSaving(false); }
   };
 
   const handleSubmit = async () => {
     if (!sesiId) return;
-    if (!report.topik.trim()) { alert("Topik materi wajib diisi."); return; }
+    if (!report.topik.trim()) { showAlert("Topik materi wajib diisi sebelum submit.", "warning", "Topik Kosong"); return; }
     setSaving(true);
     try {
       await sesiAPI.submit(sesiId, { absensi: Object.values(absensi), report, catatan_siswa: Object.values(catatanSiswa) });
       router.push(`/guru/sesi/${sesiId}`);
-    } catch { alert("Gagal submit sesi."); }
+    } catch { showAlert("Gagal submit sesi. Coba lagi.", "error", "Gagal"); }
     finally { setSaving(false); }
   };
 
@@ -379,6 +381,7 @@ export default function NewSesiPage() {
           </div>
         </div>
       )}
+      <AlertModal {...alertProps} />
     </div>
   );
 }

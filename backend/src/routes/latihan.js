@@ -47,6 +47,58 @@ router.get('/riwayat', authMiddleware, async (req, res, next) => {
     }
 });
 
+// GET /api/latihan/paket/:paketId/active-attempt
+// Cek apakah user punya attempt in_progress untuk paket ini
+// HARUS sebelum /paket/:paketId
+router.get('/paket/:paketId/active-attempt', authMiddleware, async (req, res, next) => {
+    try {
+        const paketId = parseInt(req.params.paketId);
+        const { pool } = require('../config/db');
+        const now = new Date();
+
+        const [[attempt]] = await pool.execute(
+            `SELECT id, started_at, due_at, status
+             FROM latihan_attempts
+             WHERE paket_id = ? AND user_id = ? AND status = 'in_progress'
+             ORDER BY id DESC LIMIT 1`,
+            [paketId, req.user.id]
+        );
+
+        // Ambil riwayat selesai
+        const [[submitted]] = await pool.execute(
+            `SELECT COUNT(*) as total, MAX(total_score) as best_score, MAX(finished_at) as last_finished
+             FROM latihan_attempts
+             WHERE paket_id = ? AND user_id = ? AND status = 'submitted'`,
+            [paketId, req.user.id]
+        );
+
+        const completedCount = submitted?.total || 0;
+        const bestScore      = submitted?.best_score || null;
+        const lastFinished   = submitted?.last_finished || null;
+
+        if (!attempt) {
+            return res.json({ active: false, attempt: null, completed_count: completedCount, best_score: bestScore, last_finished: lastFinished });
+        }
+
+        // Cek apakah waktu sudah habis
+        if (attempt.due_at && now > new Date(attempt.due_at)) {
+            await pool.execute(
+                `UPDATE latihan_attempts SET status = 'abandoned' WHERE id = ?`,
+                [attempt.id]
+            );
+            return res.json({ active: false, attempt: null, completed_count: completedCount, best_score: bestScore, last_finished: lastFinished });
+        }
+
+        const time_left_seconds = attempt.due_at
+            ? Math.max(0, Math.floor((new Date(attempt.due_at) - now) / 1000))
+            : null;
+
+        res.json({ active: true, attempt: { ...attempt, time_left_seconds }, completed_count: completedCount, best_score: bestScore, last_finished: lastFinished });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // GET /api/latihan/paket/:paketId
 // Detail paket beserta soal-soalnya
 router.get('/paket/:paketId', authMiddleware, async (req, res, next) => {

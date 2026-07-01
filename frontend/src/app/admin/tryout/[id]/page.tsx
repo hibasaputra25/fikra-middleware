@@ -116,7 +116,7 @@ export default function TryoutDetailPage() {
 
       {/* Tab content */}
       {tab === "questions" && <QuestionsTab tryout={tryout} onRefresh={load} />}
-      {tab === "results"   && <ResultsTab tryoutId={tryout.id} />}
+      {tab === "results"   && <ResultsTab tryoutId={tryout.id} tryoutName={tryout.name} />}
       {tab === "settings"  && <SettingsTab tryout={tryout} onSaved={load} />}
     </Container>
   );

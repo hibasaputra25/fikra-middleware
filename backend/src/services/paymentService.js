@@ -120,13 +120,19 @@ async function handleWebhook(notification) {
     else if (['cancel', 'deny', 'expire'].includes(transaction_status)) newStatus = 'failed';
     else if (transaction_status === 'pending')                           newStatus = 'pending';
 
-    // Update order
-    await pool.execute(
+    // Atomic update: hanya update jika status masih bukan 'paid'
+    // Ini mencegah race condition jika dua webhook datang bersamaan
+    const [updateResult] = await pool.execute(
         `UPDATE payment_orders
          SET status = ?, gateway_response = ?, paid_at = IF(? = 'paid', NOW(), paid_at), updated_at = NOW()
-         WHERE order_id = ?`,
+         WHERE order_id = ? AND status != 'paid'`,
         [newStatus, JSON.stringify(notification), newStatus, order_id]
     );
+
+    // Jika affectedRows = 0, berarti order sudah paid (race condition) — skip
+    if (updateResult.affectedRows === 0) {
+        return { already_processed: true };
+    }
 
     // Jika paid: aktifkan / perpanjang subscription
     if (newStatus === 'paid') {

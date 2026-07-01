@@ -13,6 +13,7 @@ import {
   type Category,
   type QuestionCollection,
 } from "@/lib/api";
+import AlertModal, { useAlertModal } from "@/components/ui/AlertModal";
 import Container from "@/components/layout/Container";
 import { Card } from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
@@ -53,6 +54,7 @@ const selectCls = "px-3 py-2 border border-border rounded-lg text-sm bg-bg-card 
 export default function AdminQuestionsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { alertProps, showAlert, showConfirm } = useAlertModal();
 
   const initCollectionId = searchParams.get("collection_id") ? parseInt(searchParams.get("collection_id")!) : "";
 
@@ -175,12 +177,13 @@ export default function AdminQuestionsPage() {
   const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()); };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Hapus soal ini? Soal akan dinonaktifkan.")) return;
+    const ok = await showConfirm("Soal ini akan dinonaktifkan.", "Hapus Soal?", "Ya, Hapus");
+    if (!ok) return;
     try {
       await questionAPI.remove(id);
       await load();
     } catch {
-      alert("Gagal menghapus soal");
+      showAlert("Gagal menghapus soal. Coba lagi.", "error", "Gagal");
     }
   };
 
@@ -486,6 +489,7 @@ export default function AdminQuestionsPage() {
           </div>
         </div>
       )}
+      <AlertModal {...alertProps} />
     </Container>
   );
 }

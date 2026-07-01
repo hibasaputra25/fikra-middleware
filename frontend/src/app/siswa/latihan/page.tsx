@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { latihanAPI, type LatihanKategori, type LatihanPaket } from "@/lib/api";
 import Link from "next/link";
-import { BookOpen, Clock, ChevronRight, Target } from "lucide-react";
+import { BookOpen, Clock, ChevronRight, Target, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const DIFFICULTY_LABEL: Record<string, string> = {
@@ -42,12 +42,30 @@ const CATEGORY_ACTIVE: Record<string, string> = {
 };
 
 function PaketCard({ paket }: { paket: LatihanPaket }) {
+  const isActive = !!paket.active_attempt;
   return (
     <Link href={`/siswa/latihan/${paket.id}`} className="group block">
-      <div className="bg-white border border-border rounded-xl p-4 hover:border-primary/40 hover:shadow-sm transition-all duration-150 cursor-pointer">
+      <div className={cn(
+        "bg-white border rounded-xl p-4 hover:shadow-sm transition-all duration-150 cursor-pointer",
+        isActive
+          ? "border-amber-300 bg-amber-50/40 hover:border-amber-400"
+          : "border-border hover:border-primary/40"
+      )}>
+        {/* Badge sedang berlangsung */}
+        {isActive && (
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            <span className="text-xs font-medium text-amber-700">Sedang berlangsung</span>
+          </div>
+        )}
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-text-primary group-hover:text-primary transition-colors leading-snug mb-2">
+            <h3 className={cn(
+              "text-sm font-semibold leading-snug mb-2 transition-colors",
+              isActive
+                ? "text-amber-900 group-hover:text-amber-700"
+                : "text-text-primary group-hover:text-primary"
+            )}>
               {paket.name}
             </h3>
             {paket.description && (

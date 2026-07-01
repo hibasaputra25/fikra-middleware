@@ -7,6 +7,7 @@ import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import { Flag, ChevronLeft, ChevronRight, Send, Clock, AlertTriangle, List } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { safeHtml } from "@/lib/sanitize";
 
 function formatTime(sec: number) {
   if (sec <= 0) return "00:00";
@@ -454,7 +455,7 @@ export default function TryoutPlayPage() {
               <div className="px-5 py-4">
                 <div
                   className="fk-prose prose prose-sm max-w-none mb-4 text-text-primary"
-                  dangerouslySetInnerHTML={{ __html: q.content }}
+                  dangerouslySetInnerHTML={safeHtml(q.content)}
                 />
 
                 {/* Options */}
@@ -480,7 +481,7 @@ export default function TryoutPlayPage() {
                       </span>
                       <div
                         className="flex-1 text-sm text-text-primary fk-prose"
-                        dangerouslySetInnerHTML={{ __html: opt.content }}
+                        dangerouslySetInnerHTML={safeHtml(opt.content)}
                       />
                     </button>
                   );

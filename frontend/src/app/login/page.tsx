@@ -149,6 +149,15 @@ export default function LoginPage() {
               autoComplete="current-password"
             />
 
+            <div className="flex justify-end -mt-1">
+              <Link
+                href="/forgot-password"
+                className="text-sm text-primary hover:underline"
+              >
+                Lupa password?
+              </Link>
+            </div>
+
             {error && (
               <div className="px-3.5 py-2.5 bg-red-50 border border-red-100 rounded-xl">
                 <p className="text-sm text-danger">{error}</p>

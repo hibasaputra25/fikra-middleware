@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { quizAPI, resultAPI, type TryoutDetail } from "@/lib/api";
+import { quizAPI, resultAPI, exportAPI, downloadBlob, type TryoutDetail } from "@/lib/api";
 import Container from "@/components/layout/Container";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
-import { ArrowLeft, Trophy, FileText, Clock, Users, BookOpen } from "lucide-react";
+import AlertModal, { useAlertModal } from "@/components/ui/AlertModal";
+import { ArrowLeft, Trophy, FileText, Clock, Users, BookOpen, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -38,11 +39,27 @@ export default function GuruTryoutDetailPage() {
   const params  = useParams<{ id: string }>();
   const router  = useRouter();
   const quizId  = parseInt(params.id);
+  const { alertProps, showAlert } = useAlertModal();
 
-  const [tryout, setTryout]   = useState<TryoutDetail | null>(null);
-  const [ranking, setRanking] = useState<RankingItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState("");
+  const [tryout, setTryout]     = useState<TryoutDetail | null>(null);
+  const [ranking, setRanking]   = useState<RankingItem[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportNilai = async () => {
+    if (!tryout) return;
+    setExporting(true);
+    try {
+      const res = await exportAPI.nilaiTryout(quizId);
+      const safeName = tryout.name.replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_");
+      downloadBlob(res.data as Blob, `Nilai_${safeName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch {
+      showAlert("Gagal mengexport nilai. Coba lagi.", "error", "Gagal Export");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -112,11 +129,19 @@ export default function GuruTryoutDetailPage() {
         </div>
       </div>
 
-      {/* Tombol lihat soal */}
-      <div className="mb-5">
+      {/* Tombol lihat soal + export */}
+      <div className="mb-5 flex gap-2 flex-wrap">
         <Button variant="outline" onClick={() => router.push(`/guru/tryout/${tryout.id}/soal`)}>
           <BookOpen className="w-4 h-4 mr-1.5" />
           Lihat Soal Tryout
+        </Button>
+        <Button
+          variant="outline"
+          onClick={handleExportNilai}
+          disabled={exporting || ranking.length === 0}
+        >
+          <Download className="w-4 h-4 mr-1.5" />
+          {exporting ? "Mengexport..." : "Export Nilai (.xlsx)"}
         </Button>
       </div>
 
@@ -182,7 +207,7 @@ export default function GuruTryoutDetailPage() {
                 ? `${Math.floor(r.time_spent_seconds / 60)}m`
                 : "-";
               return (
-                <div key={r.user_id} className="grid grid-cols-[40px_1fr] sm:grid-cols-[40px_1fr_100px_100px] px-4 py-3 items-center">
+                <div key={`${r.user_id}-${i}`} className="grid grid-cols-[40px_1fr] sm:grid-cols-[40px_1fr_100px_100px] px-4 py-3 items-center">
                   <span className={cn("text-sm font-bold", getMedalColor(rank))}>
                     {rank <= 3 ? ["🥇","🥈","🥉"][rank-1] : rank}
                   </span>
@@ -208,6 +233,7 @@ export default function GuruTryoutDetailPage() {
           </div>
         )}
       </div>
+      <AlertModal {...alertProps} />
     </Container>
   );
 }

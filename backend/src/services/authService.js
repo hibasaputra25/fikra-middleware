@@ -4,7 +4,10 @@ const crypto    = require('crypto');
 const { pool }  = require('../config/db');
 const { sendVerificationEmail } = require('./emailService');
 
-const JWT_SECRET          = process.env.JWT_SECRET  || process.env.APP_SECRET || 'fikra-jwt-secret';
+const JWT_SECRET = process.env.JWT_SECRET || process.env.APP_SECRET;
+if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET environment variable wajib diset. Jalankan tidak dengan fallback hardcoded.');
+}
 const JWT_EXPIRES_IN      = process.env.JWT_EXPIRES  || '7d';
 const REFRESH_EXPIRES_IN  = 30; // hari
 const BCRYPT_ROUNDS       = 12;
@@ -33,7 +36,10 @@ function generateRefreshToken() {
 // REGISTER
 // =====================================================================
 
-async function register({ username, email, password, nama, role = 'siswa', invite_code = null }) {
+async function register({ username, email, password, nama, invite_code = null }) {
+    // Role selalu siswa untuk registrasi publik — tidak bisa di-override dari request
+    const role = 'siswa';
+
     // Validasi input
     if (!username || !email || !password || !nama) {
         throw new Error('username, email, password, dan nama wajib diisi');
@@ -44,10 +50,6 @@ async function register({ username, email, password, nama, role = 'siswa', invit
     if (!/^[a-zA-Z0-9_.]+$/.test(username)) {
         throw new Error('Username hanya boleh huruf, angka, titik, dan underscore');
     }
-    // Public register hanya boleh role siswa
-    if (!['siswa', 'guru', 'admin'].includes(role)) {
-        throw new Error('Role tidak valid');
-    }
 
     // Cek duplikasi
     const [[existing]] = await pool.execute(
@@ -56,77 +58,98 @@ async function register({ username, email, password, nama, role = 'siswa', invit
     );
     if (existing) throw new Error('Username atau email sudah terdaftar');
 
-    // Validasi invite_code jika ada
-    let inviteRow = null;
+    // Validasi invite_code jika ada — validasi awal sebelum transaksi
+    // (cek eksistensi dan expired saja, atomic increment dilakukan di dalam transaksi)
+    let inviteCode = null;
     let userType = 'subscription'; // default: daftar mandiri
     if (invite_code) {
         const [[ic]] = await pool.execute(
             `SELECT * FROM invite_codes
              WHERE code = ? AND is_active = 1
                AND (expires_at IS NULL OR expires_at > NOW())
-               AND used_count < max_uses
              LIMIT 1`,
             [invite_code]
         );
         if (!ic) throw new Error('Kode undangan tidak valid atau sudah kadaluarsa');
-        inviteRow = ic;
+        inviteCode = ic;
         userType = 'kelas';
     }
 
     const password_hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-    const [result] = await pool.execute(
-        `INSERT INTO users (username, email, password_hash, nama, role, user_type, is_email_verified)
-         VALUES (?, ?, ?, ?, ?, ?, 0)`,
-        [username, email, password_hash, nama, role, userType]
-    );
-    const userId = result.insertId;
+    // Semua operasi DB dalam satu transaction — kalau salah satu gagal, semuanya rollback
+    const conn = await pool.getConnection();
+    try {
+        await conn.beginTransaction();
 
-    // Jika dari invite code: relasi guru_siswa + user_jenjang + increment used_count
-    if (inviteRow) {
-        await pool.execute(
-            'INSERT INTO guru_siswa (guru_id, siswa_id) VALUES (?, ?)',
-            [inviteRow.created_by, userId]
+        const [result] = await conn.execute(
+            `INSERT INTO users (username, email, password_hash, nama, role, user_type, is_email_verified)
+             VALUES (?, ?, ?, ?, ?, ?, 0)`,
+            [username, email, password_hash, nama, role, userType]
         );
-        if (inviteRow.kurikulum_id) {
-            await pool.execute(
-                'INSERT IGNORE INTO user_jenjang (user_id, kurikulum_id) VALUES (?, ?)',
-                [userId, inviteRow.kurikulum_id]
+        const userId = result.insertId;
+
+        // Jika dari invite code: atomic increment + relasi guru_siswa + user_jenjang
+        if (inviteCode) {
+            // Atomic UPDATE di dalam transaksi — mencegah race condition concurrent registrasi
+            // Dua request bersamaan: hanya satu yang berhasil increment jika used_count >= max_uses
+            const [inviteUpdate] = await conn.execute(
+                `UPDATE invite_codes
+                 SET used_count = used_count + 1
+                 WHERE id = ? AND used_count < max_uses`,
+                [inviteCode.id]
             );
+            if (inviteUpdate.affectedRows === 0) {
+                // Kode sudah penuh saat transaksi berjalan — rollback otomatis via throw
+                throw new Error('Kode undangan sudah mencapai batas penggunaan');
+            }
+            await conn.execute(
+                'INSERT INTO guru_siswa (guru_id, siswa_id) VALUES (?, ?)',
+                [inviteCode.created_by, userId]
+            );
+            if (inviteCode.kurikulum_id) {
+                await conn.execute(
+                    'INSERT IGNORE INTO user_jenjang (user_id, kurikulum_id) VALUES (?, ?)',
+                    [userId, inviteCode.kurikulum_id]
+                );
+            }
         }
-        await pool.execute(
-            'UPDATE invite_codes SET used_count = used_count + 1 WHERE id = ?',
-            [inviteRow.id]
+
+        // Insert subscription free
+        await conn.execute(
+            `INSERT INTO subscriptions (user_id, plan, status) VALUES (?, 'free', 'active')`,
+            [userId]
         );
+
+        // Generate email verification token
+        const verifyToken = crypto.randomBytes(32).toString('hex');
+        const expiresAt   = new Date(Date.now() + 24 * 60 * 60 * 1000)
+            .toISOString().slice(0, 19).replace('T', ' ');
+        await conn.execute(
+            'INSERT INTO email_verifications (user_id, token, expires_at) VALUES (?, ?, ?)',
+            [userId, verifyToken, expiresAt]
+        );
+
+        await conn.commit();
+
+        const user = await getUserById(userId);
+
+        // Kirim email (non-blocking — jangan gagalkan register kalau email error)
+        sendVerificationEmail(user, verifyToken).catch(err =>
+            console.warn('⚠️  Gagal kirim email verifikasi:', err.message)
+        );
+
+        return {
+            user: safeUser(user),
+            message: 'Registrasi berhasil! Cek email kamu untuk verifikasi akun.',
+            email_sent: true
+        };
+    } catch (err) {
+        await conn.rollback();
+        throw err;
+    } finally {
+        conn.release();
     }
-
-    // Insert subscription free
-    await pool.execute(
-        `INSERT INTO subscriptions (user_id, plan, status) VALUES (?, 'free', 'active')`,
-        [userId]
-    );
-
-    // Generate & kirim email verification token
-    const verifyToken = crypto.randomBytes(32).toString('hex');
-    const expiresAt   = new Date(Date.now() + 24 * 60 * 60 * 1000)
-        .toISOString().slice(0, 19).replace('T', ' ');
-    await pool.execute(
-        'INSERT INTO email_verifications (user_id, token, expires_at) VALUES (?, ?, ?)',
-        [userId, verifyToken, expiresAt]
-    );
-
-    const user = await getUserById(userId);
-
-    // Kirim email (non-blocking — jangan gagalkan register kalau email error)
-    sendVerificationEmail(user, verifyToken).catch(err =>
-        console.warn('⚠️  Gagal kirim email verifikasi:', err.message)
-    );
-
-    return {
-        user: safeUser(user),
-        message: 'Registrasi berhasil! Cek email kamu untuk verifikasi akun.',
-        email_sent: true
-    };
 }
 
 // =====================================================================
@@ -355,10 +378,108 @@ function safeUser(user) {
     return safe;
 }
 
+// =====================================================================
+// FORGOT PASSWORD
+// =====================================================================
+
+async function forgotPassword({ email }) {
+    if (!email) throw new Error('Email wajib diisi');
+
+    // Cari user — selalu return success agar tidak bocorkan info email terdaftar atau tidak
+    const [[user]] = await pool.execute(
+        'SELECT id, nama, email FROM users WHERE email = ? AND is_active = 1 LIMIT 1',
+        [email]
+    );
+
+    if (!user) {
+        // Return sukses palsu — jangan kasih tahu email tidak terdaftar
+        return { message: 'Jika email terdaftar, link reset password akan dikirim.' };
+    }
+
+    // Hapus token lama yang belum dipakai untuk user ini
+    await pool.execute(
+        'DELETE FROM email_verifications WHERE user_id = ? AND type = ? AND used_at IS NULL',
+        [user.id, 'password_reset']
+    );
+
+    // Buat token baru — expired dalam 1 jam (pakai MySQL NOW() agar konsisten dengan timezone DB)
+    const token = crypto.randomBytes(32).toString('hex');
+
+    await pool.execute(
+        `INSERT INTO email_verifications (user_id, token, expires_at, type)
+         VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 1 HOUR), ?)`,
+        [user.id, token, 'password_reset']
+    );
+
+    // Kirim email (non-blocking)
+    const { sendPasswordResetEmail } = require('./emailService');
+    sendPasswordResetEmail(user, token).catch(err =>
+        console.warn('⚠️  Gagal kirim email reset password:', err.message)
+    );
+
+    return { message: 'Jika email terdaftar, link reset password akan dikirim.' };
+}
+
+// =====================================================================
+// RESET PASSWORD
+// =====================================================================
+
+async function resetPassword({ token, new_password }) {
+    if (!token) throw new Error('Token tidak ditemukan');
+    if (!new_password || new_password.length < 8) {
+        throw new Error('Password baru minimal 8 karakter');
+    }
+
+    // Cari token yang valid
+    const [[ev]] = await pool.execute(
+        `SELECT * FROM email_verifications
+         WHERE token = ? AND type = 'password_reset'
+           AND used_at IS NULL AND expires_at > NOW()
+         LIMIT 1`,
+        [token]
+    );
+    if (!ev) throw new Error('Link reset password tidak valid atau sudah kadaluarsa');
+
+    const password_hash = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
+
+    const conn = await pool.getConnection();
+    try {
+        await conn.beginTransaction();
+
+        // Update password
+        await conn.execute(
+            'UPDATE users SET password_hash = ? WHERE id = ?',
+            [password_hash, ev.user_id]
+        );
+
+        // Tandai token sebagai used
+        await conn.execute(
+            'UPDATE email_verifications SET used_at = NOW() WHERE id = ?',
+            [ev.id]
+        );
+
+        // Invalidate semua refresh token — paksa login ulang di semua device
+        await conn.execute(
+            'DELETE FROM refresh_tokens WHERE user_id = ?',
+            [ev.user_id]
+        );
+
+        await conn.commit();
+    } catch (err) {
+        await conn.rollback();
+        throw err;
+    } finally {
+        conn.release();
+    }
+
+    return { message: 'Password berhasil direset. Silakan login dengan password baru.' };
+}
+
 module.exports = {
     register, login, refreshAccessToken,
     logout, logoutAll, getMe,
     updateProfile, changePassword,
     verifyEmail, resendVerification,
+    forgotPassword, resetPassword,
     verifyAccessToken, safeUser, getUserById
 };

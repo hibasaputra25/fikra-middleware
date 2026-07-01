@@ -153,9 +153,69 @@ async function verifyConnection() {
     return getTransporter().verify();
 }
 
+// =====================================================================
+// SEND PASSWORD RESET EMAIL
+// =====================================================================
+async function sendPasswordResetEmail(user, token) {
+    const APP_URL = getAppUrl();
+    const resetUrl = `${APP_URL}/reset-password?token=${token}`;
+
+    const html = baseTemplate('Reset Password - Fikra Academy', `
+        <h2>Reset Password</h2>
+        <p>Halo <strong>${user.nama}</strong>,</p>
+        <p>Kami menerima permintaan untuk mereset password akun Fikra Academy kamu.</p>
+        <p>Klik tombol di bawah untuk membuat password baru. Link ini hanya berlaku selama <strong>1 jam</strong>.</p>
+        <p style="text-align:center">
+            <a href="${resetUrl}" class="btn">Reset Password</a>
+        </p>
+        <p>Atau salin link berikut ke browser kamu:</p>
+        <p style="word-break:break-all;background:#f3f4f6;padding:10px;border-radius:6px;font-size:13px">${resetUrl}</p>
+        <p style="color:#6b7280;font-size:13px;margin-top:24px">
+            Jika kamu tidak meminta reset password, abaikan email ini. Password kamu tidak akan berubah.
+        </p>
+    `);
+
+    await getTransporter().sendMail({
+        from:    `"${getFromName()}" <${getFromAddress()}>`,
+        to:      user.email,
+        subject: 'Reset Password - Fikra Academy',
+        html,
+    });
+}
+
+// =====================================================================
+// SEND NOTIFICATION EMAIL
+// Template umum untuk semua jenis notifikasi in-app
+// =====================================================================
+async function sendNotificationEmail(user, notification) {
+    const APP_URL = getAppUrl();
+    const url = notification.url ? `${APP_URL}${notification.url}` : `${APP_URL}/notifikasi`;
+
+    const html = baseTemplate(`${notification.title} - Fikra Academy`, `
+        <h2>${notification.title}</h2>
+        <p>Halo <strong>${user.nama}</strong>,</p>
+        <p>${notification.body || ''}</p>
+        <p style="text-align:center">
+            <a href="${url}" class="btn">Lihat di Fikra Academy</a>
+        </p>
+        <p style="color:#6b7280;font-size:13px;margin-top:24px">
+            Kamu menerima email ini karena ada notifikasi baru di akun Fikra Academy kamu.
+        </p>
+    `);
+
+    await getTransporter().sendMail({
+        from:    `"${getFromName()}" <${getFromAddress()}>`,
+        to:      user.email,
+        subject: `${notification.title} - Fikra Academy`,
+        html,
+    });
+}
+
 module.exports = {
     sendVerificationEmail,
     sendInviteEmail,
     sendPaymentSuccessEmail,
+    sendPasswordResetEmail,
+    sendNotificationEmail,
     verifyConnection,
 };

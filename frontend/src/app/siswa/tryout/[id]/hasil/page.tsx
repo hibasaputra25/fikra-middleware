@@ -8,6 +8,7 @@ import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import { CheckCircle2, XCircle, Flag, ArrowLeft, Trophy, Clock, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { safeHtml } from "@/lib/sanitize";
 
 function stripHtml(html: string) {
   return html?.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() || "";
@@ -210,7 +211,7 @@ function QuestionReview({
           {/* Question */}
           <div
             className="fk-prose prose prose-sm max-w-none text-text-primary"
-            dangerouslySetInnerHTML={{ __html: q.content }}
+            dangerouslySetInnerHTML={safeHtml(q.content)}
           />
 
           {/* Options with answer highlight */}
@@ -236,7 +237,7 @@ function QuestionReview({
                 </span>
                 <div
                   className="flex-1 text-sm fk-prose"
-                  dangerouslySetInnerHTML={{ __html: opt.content }}
+                  dangerouslySetInnerHTML={safeHtml(opt.content)}
                 />
                 {isCorrectOpt && <CheckCircle2 className="w-4 h-4 text-success shrink-0" />}
                 {isStudentAnswer && !isCorrectOpt && <XCircle className="w-4 h-4 text-danger shrink-0" />}
@@ -262,7 +263,7 @@ function QuestionReview({
               <p className="text-xs font-semibold text-blue-700 mb-1">Pembahasan</p>
               <div
                 className="text-sm text-blue-900 fk-prose"
-                dangerouslySetInnerHTML={{ __html: q.explanation }}
+                dangerouslySetInnerHTML={safeHtml(q.explanation)}
               />
             </div>
           )}

@@ -8,6 +8,7 @@ import Container from "@/components/layout/Container";
 import { Card } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
+import AlertModal, { useAlertModal } from "@/components/ui/AlertModal";
 import { Plus, Pencil, Trash2, FolderOpen, X, Search, FileText } from "lucide-react";
 
 interface DialogState {
@@ -18,6 +19,7 @@ interface DialogState {
 
 export default function AdminCollectionsPage() {
   const router = useRouter();
+  const { alertProps, showAlert, showConfirm } = useAlertModal();
   const [items, setItems] = useState<QuestionCollection[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -53,13 +55,14 @@ export default function AdminCollectionsPage() {
       count > 0
         ? `Yakin ingin menghapus kategori "${c.name}"? ${count} soal di kategori ini akan kehilangan referensi (soalnya tetap ada).`
         : `Yakin ingin menghapus kategori "${c.name}"?`;
-    if (!confirm(msg)) return;
+    const ok = await showConfirm(msg, "Hapus Kategori?", "Ya, Hapus");
+    if (!ok) return;
     try {
       await collectionAPI.remove(c.id);
       await load();
     } catch (err) {
       console.error(err);
-      alert("Gagal menghapus kategori");
+      showAlert("Gagal menghapus kategori. Coba lagi.", "error", "Gagal");
     }
   };
 
@@ -183,6 +186,7 @@ export default function AdminCollectionsPage() {
           load();
         }}
       />
+      <AlertModal {...alertProps} />
     </Container>
   );
 }

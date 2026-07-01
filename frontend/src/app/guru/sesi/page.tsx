@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { sesiAPI, type SesiKelas } from "@/lib/api";
+import { sesiAPI, exportAPI, downloadBlob, type SesiKelas } from "@/lib/api";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, ArrowRight, BookOpen, Clock, Users, CheckCircle, FileEdit, Trash2, CalendarDays } from "lucide-react";
+import { Plus, ArrowRight, BookOpen, Clock, Users, CheckCircle, FileEdit, Trash2, CalendarDays, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
+import AlertModal, { useAlertModal } from "@/components/ui/AlertModal";
 
 const JENJANG_COLOR: Record<string, string> = {
   SD: "bg-pink-100 text-pink-700",
@@ -23,9 +24,24 @@ const CAPAIAN_CONFIG: Record<string, { label: string; color: string }> = {
 
 export default function GuruSesiPage() {
   const router = useRouter();
-  const [sesiList, setSesiList] = useState<SesiKelas[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [deleting, setDeleting] = useState<number | null>(null);
+  const { alertProps, showAlert, showConfirm } = useAlertModal();
+  const [sesiList, setSesiList]   = useState<SesiKelas[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [deleting, setDeleting]   = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportAbsensi = async () => {
+    setExporting(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const res = await exportAPI.absensi({ tanggal_sampai: today });
+      downloadBlob(res.data as Blob, `Absensi_${today}.xlsx`);
+    } catch {
+      showAlert("Gagal mengexport absensi. Coba lagi.", "error", "Gagal Export");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   useEffect(() => { loadData(); }, []);
 
@@ -42,13 +58,14 @@ export default function GuruSesiPage() {
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.preventDefault();
-    if (!confirm("Hapus sesi ini?")) return;
+    const ok = await showConfirm("Sesi ini akan dihapus permanen.", "Hapus Sesi?", "Ya, Hapus");
+    if (!ok) return;
     setDeleting(id);
     try {
       await sesiAPI.delete(id);
       setSesiList(prev => prev.filter(s => s.id !== id));
     } catch {
-      alert("Gagal menghapus sesi.");
+      showAlert("Gagal menghapus sesi. Coba lagi.", "error", "Gagal");
     } finally {
       setDeleting(null);
     }
@@ -87,6 +104,14 @@ export default function GuruSesiPage() {
           <Plus className="w-4 h-4" />
           Buat Sesi
         </Link>
+        <button
+          onClick={handleExportAbsensi}
+          disabled={exporting || sesiList.length === 0}
+          className="inline-flex items-center gap-1.5 px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 disabled:opacity-50 transition-colors"
+        >
+          <Download className="w-4 h-4" />
+          {exporting ? "Mengexport..." : "Export Absensi"}
+        </button>
       </div>
 
       {sesiList.length === 0 ? (
@@ -194,6 +219,7 @@ export default function GuruSesiPage() {
           })}
         </div>
       )}
+      <AlertModal {...alertProps} />
     </div>
   );
 }

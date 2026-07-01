@@ -1,11 +1,133 @@
 const express = require('express');
 const router  = express.Router();
 const { pool } = require('../config/db');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, requireRole } = require('../middleware/auth');
+
+// Shorthand: autentikasi + hanya guru & admin
+const adminOnly = [authMiddleware, requireRole('guru', 'admin')];
+
+// GET /api/quizzes
+// List semua tryout yang published
+// Siswa: hanya tryout yang sesuai jenjangnya (via user_jenjang)
+// Guru/Admin: semua tryout published
+router.get('/', authMiddleware, async (req, res, next) => {
+    try {
+        const { role, id: userId } = req.user;
+
+        let whereExtra = '';
+        const extraParams = [];
+
+        if (role === 'guru') {
+            whereExtra = `
+                AND (
+                    NOT EXISTS (
+                        SELECT 1 FROM guru_kurikulum gk WHERE gk.user_id = ?
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM tryout_sections ts4
+                        JOIN categories c4 ON c4.id = ts4.category_id
+                        WHERE ts4.tryout_id = t.id
+                        AND c4.parent_id IN (
+                            SELECT kurikulum_id FROM guru_kurikulum WHERE user_id = ?
+                        )
+                    )
+                    OR NOT EXISTS (
+                        SELECT 1 FROM tryout_sections ts5
+                        JOIN categories c5 ON c5.id = ts5.category_id
+                        WHERE ts5.tryout_id = t.id
+                    )
+                )
+            `;
+            extraParams.push(userId, userId);
+        } else if (role === 'siswa') {
+            whereExtra = `
+                AND (
+                    NOT EXISTS (
+                        SELECT 1 FROM tryout_sections ts2
+                        JOIN categories c2 ON c2.id = ts2.category_id
+                        WHERE ts2.tryout_id = t.id
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM tryout_sections ts3
+                        JOIN categories c3 ON c3.id = ts3.category_id
+                        WHERE ts3.tryout_id = t.id
+                        AND c3.parent_id IN (
+                            SELECT kurikulum_id FROM user_jenjang WHERE user_id = ?
+                        )
+                    )
+                )
+            `;
+            extraParams.push(userId);
+        }
+
+        const [rows] = await pool.execute(`
+            SELECT
+                t.id, t.name, t.description, t.type,
+                t.duration_minutes, t.start_at, t.end_at,
+                t.max_attempts, t.shuffle_questions, t.shuffle_options,
+                t.show_review, t.show_explanation, t.passing_score,
+                t.status, t.created_at,
+                COUNT(DISTINCT ts.id)   AS section_count,
+                SUM(ts.total_questions) AS total_questions
+            FROM tryouts t
+            LEFT JOIN tryout_sections ts ON ts.tryout_id = t.id
+            WHERE t.status = 'published' ${whereExtra}
+            GROUP BY t.id
+            ORDER BY t.start_at DESC, t.created_at DESC
+        `, extraParams);
+
+        const now = new Date();
+        const data = rows.map(t => ({ ...t, status_jadwal: getStatusJadwal(t, now) }));
+
+        // Inject user_attempt info (in_progress + completed_count)
+        if (data.length > 0 && userId) {
+            const tryoutIds = data.map(t => t.id);
+            const ph = tryoutIds.map(() => '?').join(',');
+
+            const [activeAttempts] = await pool.execute(
+                `SELECT tryout_id, id, due_at, started_at
+                 FROM tryout_attempts
+                 WHERE tryout_id IN (${ph}) AND user_id = ? AND status = 'in_progress'
+                 ORDER BY id DESC`,
+                [...tryoutIds, userId]
+            );
+            const activeMap = {};
+            for (const a of activeAttempts) {
+                if (activeMap[a.tryout_id]) continue;
+                if (a.due_at && now > new Date(a.due_at)) continue;
+                activeMap[a.tryout_id] = {
+                    id: a.id,
+                    started_at: a.started_at,
+                    time_left_seconds: a.due_at
+                        ? Math.max(0, Math.floor((new Date(a.due_at) - now) / 1000))
+                        : null
+                };
+            }
+
+            const [completed] = await pool.execute(
+                `SELECT tryout_id, COUNT(*) as total, MAX(total_score) as best_score
+                 FROM tryout_attempts
+                 WHERE tryout_id IN (${ph}) AND user_id = ? AND status = 'submitted'
+                 GROUP BY tryout_id`,
+                [...tryoutIds, userId]
+            );
+            const completedMap = {};
+            completed.forEach(c => { completedMap[c.tryout_id] = { total: c.total, best_score: c.best_score }; });
+
+            data.forEach(t => {
+                t.active_attempt    = activeMap[t.id] || null;
+                t.completed_count   = completedMap[t.id]?.total || 0;
+                t.best_score        = completedMap[t.id]?.best_score || null;
+            });
+        }
+
+        res.json({ total: data.length, data });
+    } catch (err) { next(err); }
+});
 
 // GET /api/quizzes/admin/all
 // List semua tryout (termasuk draft) untuk admin/guru
-router.get('/admin/all', authMiddleware, async (req, res, next) => {
+router.get('/admin/all', adminOnly, async (req, res, next) => {
     try {
         const [rows] = await pool.execute(`
             SELECT
@@ -33,7 +155,7 @@ router.get('/admin/all', authMiddleware, async (req, res, next) => {
 
 // POST /api/quizzes/admin
 // Buat tryout baru
-router.post('/admin', authMiddleware, async (req, res, next) => {
+router.post('/admin', adminOnly, async (req, res, next) => {
     try {
         const { name, type = 'custom', duration_minutes, start_at, end_at } = req.body;
         if (!name) return res.status(400).json({ error: 'Nama tryout wajib diisi' });
@@ -54,7 +176,7 @@ router.post('/admin', authMiddleware, async (req, res, next) => {
 
 // GET /api/quizzes/admin/:id/sections
 // List sections dari satu tryout
-router.get('/admin/:id/sections', authMiddleware, async (req, res, next) => {
+router.get('/admin/:id/sections', adminOnly, async (req, res, next) => {
     try {
         const [sections] = await pool.execute(
             `SELECT id, name, sort_order, total_questions FROM tryout_sections
@@ -67,7 +189,7 @@ router.get('/admin/:id/sections', authMiddleware, async (req, res, next) => {
 
 // POST /api/quizzes/admin/section/:sectionId/questions/append
 // Tambah soal ke section tryout (tanpa hapus yang sudah ada)
-router.post('/admin/section/:sectionId/questions/append', authMiddleware, async (req, res, next) => {
+router.post('/admin/section/:sectionId/questions/append', adminOnly, async (req, res, next) => {
     try {
         const sectionId = parseInt(req.params.sectionId);
         const { question_ids } = req.body;
@@ -117,7 +239,7 @@ router.post('/admin/section/:sectionId/questions/append', authMiddleware, async 
 
 // GET /api/quizzes/admin/:id
 // Detail lengkap tryout: metadata + sections + soal per section
-router.get('/admin/:id', authMiddleware, async (req, res, next) => {
+router.get('/admin/:id', adminOnly, async (req, res, next) => {
     try {
         const id = parseInt(req.params.id);
         const [[tryout]] = await pool.execute('SELECT * FROM tryouts WHERE id = ?', [id]);
@@ -172,7 +294,7 @@ router.get('/admin/:id', authMiddleware, async (req, res, next) => {
 
 // PUT /api/quizzes/admin/:id
 // Update metadata tryout (settings)
-router.put('/admin/:id', authMiddleware, async (req, res, next) => {
+router.put('/admin/:id', adminOnly, async (req, res, next) => {
     try {
         const id = parseInt(req.params.id);
         const allowed = ['name','type','status','duration_minutes','start_at','end_at',
@@ -196,7 +318,7 @@ router.put('/admin/:id', authMiddleware, async (req, res, next) => {
 
 // DELETE /api/quizzes/admin/:id
 // Hapus tryout
-router.delete('/admin/:id', authMiddleware, async (req, res, next) => {
+router.delete('/admin/:id', adminOnly, async (req, res, next) => {
     try {
         const id = parseInt(req.params.id);
         await pool.execute('DELETE FROM tryouts WHERE id = ?', [id]);
@@ -206,7 +328,7 @@ router.delete('/admin/:id', authMiddleware, async (req, res, next) => {
 
 // POST /api/quizzes/admin/:id/sections
 // Tambah section baru ke tryout
-router.post('/admin/:id/sections', authMiddleware, async (req, res, next) => {
+router.post('/admin/:id/sections', adminOnly, async (req, res, next) => {
     try {
         const tryoutId = parseInt(req.params.id);
         const { name } = req.body;
@@ -226,7 +348,7 @@ router.post('/admin/:id/sections', authMiddleware, async (req, res, next) => {
 
 // PUT /api/quizzes/admin/section/:sectionId
 // Rename section
-router.put('/admin/section/:sectionId', authMiddleware, async (req, res, next) => {
+router.put('/admin/section/:sectionId', adminOnly, async (req, res, next) => {
     try {
         const sectionId = parseInt(req.params.sectionId);
         const { name } = req.body;
@@ -238,7 +360,7 @@ router.put('/admin/section/:sectionId', authMiddleware, async (req, res, next) =
 
 // DELETE /api/quizzes/admin/section/:sectionId
 // Hapus section (cascade ke soal di section)
-router.delete('/admin/section/:sectionId', authMiddleware, async (req, res, next) => {
+router.delete('/admin/section/:sectionId', adminOnly, async (req, res, next) => {
     try {
         const sectionId = parseInt(req.params.sectionId);
         await pool.execute('DELETE FROM tryout_sections WHERE id = ?', [sectionId]);
@@ -248,7 +370,7 @@ router.delete('/admin/section/:sectionId', authMiddleware, async (req, res, next
 
 // DELETE /api/quizzes/admin/section/:sectionId/questions/:questionId
 // Hapus satu soal dari section
-router.delete('/admin/section/:sectionId/questions/:questionId', authMiddleware, async (req, res, next) => {
+router.delete('/admin/section/:sectionId/questions/:questionId', adminOnly, async (req, res, next) => {
     try {
         const sectionId  = parseInt(req.params.sectionId);
         const questionId = parseInt(req.params.questionId);
@@ -267,7 +389,7 @@ router.delete('/admin/section/:sectionId/questions/:questionId', authMiddleware,
 
 // PUT /api/quizzes/admin/section/:sectionId/questions/:questionId
 // Update marks/penalty/sort_order satu soal di section
-router.put('/admin/section/:sectionId/questions/:questionId', authMiddleware, async (req, res, next) => {
+router.put('/admin/section/:sectionId/questions/:questionId', adminOnly, async (req, res, next) => {
     try {
         const sectionId  = parseInt(req.params.sectionId);
         const questionId = parseInt(req.params.questionId);
@@ -289,7 +411,7 @@ router.put('/admin/section/:sectionId/questions/:questionId', authMiddleware, as
 
 // GET /api/quizzes/admin/:id/attempts
 // List semua attempts untuk monitoring (admin)
-router.get('/admin/:id/attempts', authMiddleware, async (req, res, next) => {
+router.get('/admin/:id/attempts', adminOnly, async (req, res, next) => {
     try {
         const tryoutId = parseInt(req.params.id);
         const [attempts] = await pool.execute(`
@@ -317,98 +439,6 @@ router.get('/admin/:id/attempts', authMiddleware, async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-// ─── PUBLIC ROUTES ────────────────────────────────────────────────────────────
-
-// GET /api/quizzes
-// List semua tryout yang published
-// Siswa: hanya tryout yang sesuai jenjangnya (via user_jenjang)
-// Guru/Admin: semua tryout published
-router.get('/', authMiddleware, async (req, res, next) => {
-    try {
-        const { role, id: userId } = req.user;
-
-        let whereExtra = '';
-        const extraParams = [];
-
-        if (role === 'guru') {
-            // Guru hanya lihat tryout yang kurikulumnya sesuai dengan kurikulum yang diajarkan
-            // Jika guru belum punya kurikulum, tampilkan semua
-            whereExtra = `
-                AND (
-                    NOT EXISTS (
-                        SELECT 1 FROM guru_kurikulum gk WHERE gk.user_id = ?
-                    )
-                    OR EXISTS (
-                        SELECT 1 FROM tryout_sections ts4
-                        JOIN categories c4 ON c4.id = ts4.category_id
-                        WHERE ts4.tryout_id = t.id
-                        AND c4.parent_id IN (
-                            SELECT kurikulum_id FROM guru_kurikulum WHERE user_id = ?
-                        )
-                    )
-                    OR NOT EXISTS (
-                        SELECT 1 FROM tryout_sections ts5
-                        JOIN categories c5 ON c5.id = ts5.category_id
-                        WHERE ts5.tryout_id = t.id
-                    )
-                )
-            `;
-            extraParams.push(userId, userId);
-        } else if (role === 'siswa') {
-            // Filter: hanya tampilkan tryout yang section-nya mengandung soal
-            // dari subtes yang sesuai jenjang siswa
-            // Atau tryout yang tidak ada jenjang spesifik (category_id NULL di sections)
-            // Logic: tryout muncul jika:
-            // 1. Siswa punya jenjang dan ada section dengan category yang parent-nya = jenjang siswa
-            // 2. ATAU semua section tidak punya category (tryout umum)
-            whereExtra = `
-                AND (
-                    NOT EXISTS (
-                        SELECT 1 FROM tryout_sections ts2
-                        JOIN categories c2 ON c2.id = ts2.category_id
-                        WHERE ts2.tryout_id = t.id
-                    )
-                    OR EXISTS (
-                        SELECT 1 FROM tryout_sections ts3
-                        JOIN categories c3 ON c3.id = ts3.category_id
-                        WHERE ts3.tryout_id = t.id
-                        AND c3.parent_id IN (
-                            SELECT kurikulum_id FROM user_jenjang WHERE user_id = ?
-                        )
-                    )
-                )
-            `;
-            extraParams.push(userId);
-        }
-
-        const [rows] = await pool.execute(`
-            SELECT
-                t.id, t.name, t.description, t.type,
-                t.duration_minutes, t.start_at, t.end_at,
-                t.max_attempts, t.shuffle_questions, t.shuffle_options,
-                t.show_review, t.show_explanation, t.passing_score,
-                t.status, t.created_at,
-                COUNT(DISTINCT ts.id)  AS section_count,
-                SUM(ts.total_questions) AS total_questions
-            FROM tryouts t
-            LEFT JOIN tryout_sections ts ON ts.tryout_id = t.id
-            WHERE t.status = 'published' ${whereExtra}
-            GROUP BY t.id
-            ORDER BY t.start_at DESC, t.created_at DESC
-        `, extraParams);
-
-        const now = new Date();
-        const data = rows.map(t => ({
-            ...t,
-            status_jadwal: getStatusJadwal(t, now)
-        }));
-
-        res.json({ total: data.length, data });
-    } catch (err) {
-        next(err);
-    }
-});
-
 // GET /api/quizzes/:id
 // Detail satu tryout beserta sections
 router.get('/:id', authMiddleware, async (req, res, next) => {
@@ -431,6 +461,76 @@ router.get('/:id', authMiddleware, async (req, res, next) => {
             ...tryout,
             status_jadwal: getStatusJadwal(tryout, new Date()),
             sections
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// GET /api/quizzes/:id/active-attempt
+// Cek apakah user punya attempt in_progress untuk tryout ini
+router.get('/:id/active-attempt', authMiddleware, async (req, res, next) => {
+    try {
+        const tryoutId = parseInt(req.params.id);
+        const userId = req.user.id;
+        const now = new Date();
+
+        const [[attempt]] = await pool.execute(
+            `SELECT id, started_at, due_at, status, attempt_number
+             FROM tryout_attempts
+             WHERE tryout_id = ? AND user_id = ? AND status = 'in_progress'
+             ORDER BY id DESC LIMIT 1`,
+            [tryoutId, userId]
+        );
+
+        if (!attempt) {
+            // Cek apakah sudah pernah selesai
+            const [[submitted]] = await pool.execute(
+                `SELECT COUNT(*) as total, MAX(total_score) as best_score, MAX(finished_at) as last_finished
+                 FROM tryout_attempts
+                 WHERE tryout_id = ? AND user_id = ? AND status = 'submitted'`,
+                [tryoutId, userId]
+            );
+            return res.json({
+                active: false,
+                attempt: null,
+                completed_count: submitted?.total || 0,
+                best_score: submitted?.best_score || null,
+                last_finished: submitted?.last_finished || null
+            });
+        }
+
+        // Cek apakah waktu sudah habis
+        if (attempt.due_at && now > new Date(attempt.due_at)) {
+            await pool.execute(
+                `UPDATE tryout_attempts SET status = 'expired' WHERE id = ?`,
+                [attempt.id]
+            );
+            const [[submitted]] = await pool.execute(
+                `SELECT COUNT(*) as total, MAX(total_score) as best_score, MAX(finished_at) as last_finished
+                 FROM tryout_attempts
+                 WHERE tryout_id = ? AND user_id = ? AND status = 'submitted'`,
+                [tryoutId, userId]
+            );
+            return res.json({
+                active: false,
+                attempt: null,
+                completed_count: submitted?.total || 0,
+                best_score: submitted?.best_score || null,
+                last_finished: submitted?.last_finished || null
+            });
+        }
+
+        const time_left_seconds = attempt.due_at
+            ? Math.max(0, Math.floor((new Date(attempt.due_at) - now) / 1000))
+            : null;
+
+        res.json({
+            active: true,
+            attempt: { ...attempt, time_left_seconds },
+            completed_count: 0,
+            best_score: null,
+            last_finished: null
         });
     } catch (err) {
         next(err);
@@ -495,18 +595,13 @@ router.post('/:id/start', authMiddleware, async (req, res, next) => {
             return res.status(403).json({ error: 'Sudah mencapai batas maksimal attempt' });
         }
 
-        // Hitung due_at
-        const dueAt = tryout.duration_minutes
-            ? new Date(Date.now() + tryout.duration_minutes * 60 * 1000)
-            : null;
-
         // Hitung attempt_number
         const nextAttempt = parseInt(attemptCount) + 1;
 
         const [result] = await pool.execute(
             `INSERT INTO tryout_attempts (tryout_id, user_id, attempt_number, status, started_at, due_at)
-             VALUES (?, ?, ?, 'in_progress', NOW(), ?)`,
-            [tryoutId, userId, nextAttempt, dueAt ? dueAt.toISOString().slice(0,19).replace('T',' ') : null]
+             VALUES (?, ?, ?, 'in_progress', NOW(), IF(? IS NULL, NULL, DATE_ADD(NOW(), INTERVAL ? MINUTE)))`,
+            [tryoutId, userId, nextAttempt, tryout.duration_minutes || null, tryout.duration_minutes || null]
         );
         const attemptId = result.insertId;
 

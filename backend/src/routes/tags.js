@@ -1,9 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const tagService = require('../services/tagService');
+const { authMiddleware, requireRole } = require('../middleware/auth');
 
-// GET /api/tags?search=...
-router.get('/', async (req, res, next) => {
+// GET (read) boleh semua user yang login, POST/PUT/DELETE hanya guru & admin
+// GET boleh semua user yang login, write hanya guru & admin
+router.get('/', authMiddleware, async (req, res, next) => {
     try {
         const { search } = req.query;
         const data = search
@@ -15,7 +17,7 @@ router.get('/', async (req, res, next) => {
     }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', authMiddleware, async (req, res, next) => {
     try {
         const tag = await tagService.getById(parseInt(req.params.id));
         if (!tag) return res.status(404).json({ error: 'Tag tidak ditemukan' });
@@ -25,7 +27,7 @@ router.get('/:id', async (req, res, next) => {
     }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', authMiddleware, requireRole('guru', 'admin'), async (req, res, next) => {
     try {
         const tag = await tagService.create(req.body);
         res.status(201).json(tag);
@@ -37,7 +39,7 @@ router.post('/', async (req, res, next) => {
     }
 });
 
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', authMiddleware, requireRole('guru', 'admin'), async (req, res, next) => {
     try {
         const tag = await tagService.update(parseInt(req.params.id), req.body);
         res.json(tag);
@@ -46,7 +48,7 @@ router.put('/:id', async (req, res, next) => {
     }
 });
 
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', authMiddleware, requireRole('guru', 'admin'), async (req, res, next) => {
     try {
         await tagService.remove(parseInt(req.params.id));
         res.json({ success: true });

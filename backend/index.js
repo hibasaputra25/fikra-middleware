@@ -22,6 +22,11 @@ const collectionsRoutes = require('./src/routes/collections');
 const quizPlayerRoutes = require('./src/routes/quizPlayer');
 const latihanRoutes = require('./src/routes/latihan');
 const sesiRoutes = require('./src/routes/sesi');
+const inviteCodesRoutes     = require('./src/routes/inviteCodes');
+const notificationsRoutes   = require('./src/routes/notifications');
+const announcementsRoutes   = require('./src/routes/announcements');
+const materiRoutes          = require('./src/routes/materi');
+const exportRoutes          = require('./src/routes/export');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -32,7 +37,7 @@ app.use(helmet({
 }));
 app.use(cors({
     origin: process.env.FRONTEND_URL || '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
@@ -83,6 +88,11 @@ app.use('/api/collections', collectionsRoutes);
 app.use('/api/quiz-player', quizPlayerRoutes);
 app.use('/api/latihan', latihanRoutes);
 app.use('/api/sesi', sesiRoutes);
+app.use('/api/invite-codes', inviteCodesRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/announcements', announcementsRoutes);
+app.use('/api/materi',        materiRoutes);
+app.use('/api/export',        exportRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -97,7 +107,6 @@ async function start() {
     await testConnection();
     app.listen(PORT, () => {
         console.log(`🚀 Fikra Academy Backend running on port ${PORT}`);
-        console.log(`📡 Moodle URL: ${process.env.MOODLE_URL}`);
         console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
 }

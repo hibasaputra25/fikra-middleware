@@ -7,6 +7,7 @@ import { useAuthStore } from "@/stores/authStore";
 import Button from "@/components/ui/Button";
 import { Flag, ChevronLeft, ChevronRight, Send, AlertTriangle, CheckCircle, Clock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { safeHtml } from "@/lib/sanitize";
 
 type Phase = "loading" | "playing" | "summary" | "error";
 
@@ -82,7 +83,7 @@ function QuestionCard({ question, index, answer, onAnswer, onFlag }: {
       </div>
       <div className="px-5 py-5">
         <div className={cn("text-sm text-text-primary leading-7", "[&_p]:mb-3 [&_p:last-child]:mb-0", "[&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-3", "[&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-3", "[&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2", "[&_table]:w-full [&_table]:border-collapse [&_table]:mb-3", "[&_td]:border [&_td]:border-gray-300 [&_td]:p-2 [&_td]:text-sm", "[&_th]:border [&_th]:border-gray-300 [&_th]:p-2 [&_th]:font-semibold [&_th]:bg-gray-50")}
-          dangerouslySetInnerHTML={{ __html: question.content }} />
+          dangerouslySetInnerHTML={safeHtml(question.content)} />
       </div>
       {question.options.length > 0 && (
         <div className="px-5 pb-5 space-y-2">
@@ -170,6 +171,7 @@ export default function LatihanPlayPage() {
   const { user } = useAuthStore();
   const paketId = Number(params.paketId);
   const attemptId = Number(params.attemptId);
+  const [realPaketId, setRealPaketId] = useState(paketId);
 
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMsg, setErrorMsg] = useState("");
@@ -186,24 +188,64 @@ export default function LatihanPlayPage() {
 
   useEffect(() => { answersRef.current = answers; }, [answers]);
 
+  // Beri tahu layout bahwa quiz sedang aktif
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('quiz-active', { detail: { active: true } }));
+    return () => { window.dispatchEvent(new CustomEvent('quiz-active', { detail: { active: false } })); };
+  }, []);
+
   useEffect(() => {
     if (!user || initCalledRef.current) return;
     initCalledRef.current = true;
     (async () => {
       try {
-        const res = await latihanAPI.getPaket(paketId);
-        const qs = res.data.questions || [];
+        // Load paket (soal) dan active-attempt (jawaban + sisa waktu) secara paralel
+        const [paketRes, activeRes] = await Promise.all([
+          latihanAPI.getPaket(paketId),
+          latihanAPI.getActiveAttempt(paketId)
+        ]);
+
+        const qs = paketRes.data.questions || [];
         setQuestions(qs);
         if (qs.length > 0) setCurrentId(qs[0].id);
+
+        // Inisialisasi jawaban kosong dulu
         const init: AnswerMap = {};
         qs.forEach(q => { init[q.id] = emptyAnswer(); });
+
+        // Restore jawaban yang sudah disimpan jika ini lanjutan attempt
+        // Backend start() sudah return answers — tapi kita perlu fetch via active-attempt
+        // Kita ambil dari latihanAPI.start() karena itu yang sudah return answers
+        const startRes = await latihanAPI.start(paketId);
+        const savedAnswers = startRes.data.answers || [];
+        // Gunakan paket_id dari backend, bukan dari URL
+        const actualPaketId = (startRes.data.attempt as { paket_id?: number }).paket_id || paketId;
+        setRealPaketId(actualPaketId);
+        type SavedAnswer = { question_id: number; selected_option_ids?: number[]; answer_text?: string; is_flagged?: boolean };
+        (savedAnswers as SavedAnswer[]).forEach((a) => {
+          if (init[a.question_id]) {
+            init[a.question_id] = {
+              selected_option_ids: a.selected_option_ids || [],
+              answer_text: a.answer_text || "",
+              is_flagged: a.is_flagged || false
+            };
+          }
+        });
+
         setAnswers(init);
         answersRef.current = init;
-        if (res.data.duration_minutes) {
-          const secs = res.data.duration_minutes * 60;
+
+        // Hitung timer — gunakan sisa waktu dari attempt (bukan mulai dari awal)
+        if (activeRes.data.active && activeRes.data.attempt?.time_left_seconds !== null) {
+          const secs = activeRes.data.attempt!.time_left_seconds!;
+          setTimeLimit(secs);
+          setTimeLeft(secs);
+        } else if (paketRes.data.duration_minutes) {
+          const secs = paketRes.data.duration_minutes * 60;
           setTimeLimit(secs);
           setTimeLeft(secs);
         }
+
         const interval = setInterval(() => {
           Object.entries(answersRef.current).forEach(([qId, ans]) => {
             if (ans.selected_option_ids.length > 0 || ans.answer_text) {
@@ -246,7 +288,7 @@ export default function LatihanPlayPage() {
         }
       }
       await latihanAPI.submit(attemptId);
-      router.push(`/siswa/latihan/${paketId}/hasil/${attemptId}`);
+      router.push(`/siswa/latihan/${realPaketId}/hasil/${attemptId}`);
     } catch {
       setErrorMsg("Gagal submit latihan");
       setPhase("error");
@@ -261,13 +303,14 @@ export default function LatihanPlayPage() {
   const answeredCount = questions.filter(q => { const a = answers[q.id]; return (a?.selected_option_ids.length ?? 0) > 0 || (a?.answer_text?.length ?? 0) > 0; }).length;
 
   if (phase === "loading") return (<div className="min-h-screen bg-gray-50 flex items-center justify-center flex-col gap-4"><div className="w-10 h-10 border-4 border-secondary border-t-transparent rounded-full animate-spin" /><p className="text-sm text-text-secondary">Mempersiapkan soal...</p></div>);
-  if (phase === "error") return (<div className="min-h-screen bg-gray-50 flex items-center justify-center p-6"><div className="bg-white rounded-2xl border border-red-200 p-8 max-w-sm w-full text-center"><AlertTriangle className="w-10 h-10 text-red-500 mx-auto mb-3" /><h2 className="font-semibold mb-2">Gagal Memuat</h2><p className="text-sm text-text-secondary mb-5">{errorMsg}</p><Button variant="outline" onClick={() => router.push(`/siswa/latihan/${paketId}`)}>Kembali</Button></div></div>);
+  if (phase === "error") return (<div className="min-h-screen bg-gray-50 flex items-center justify-center p-6"><div className="bg-white rounded-2xl border border-red-200 p-8 max-w-sm w-full text-center"><AlertTriangle className="w-10 h-10 text-red-500 mx-auto mb-3" /><h2 className="font-semibold mb-2">Gagal Memuat</h2><p className="text-sm text-text-secondary mb-5">{errorMsg}</p><Button variant="outline" onClick={() => router.push(`/siswa/latihan/${realPaketId}`)}>Kembali</Button></div></div>);
   if (phase === "summary") return <SummaryView questions={questions} answers={answers} onBack={() => setPhase("playing")} onSubmit={handleSubmit} submitting={submitting} />;
 
   const currentQuestion = questions.find(q => q.id === currentId);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Exit confirm modal */}
       {showExitConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowExitConfirm(false)} />
@@ -278,50 +321,79 @@ export default function LatihanPlayPage() {
             <p className="text-sm text-text-secondary mb-5">Jawabanmu sudah tersimpan. Kamu bisa lanjutkan nanti.</p>
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={() => setShowExitConfirm(false)}>Lanjutkan</Button>
-              <Button variant="primary" className="flex-1" onClick={() => router.push(`/siswa/latihan/${paketId}`)}>Keluar</Button>
+              <Button variant="primary" className="flex-1" onClick={() => router.push(`/siswa/latihan/${realPaketId}`)}>Keluar</Button>
             </div>
           </div>
         </div>
       )}
 
-      <div className="bg-white border-b px-4 py-3 sticky top-0 z-30">
-        <div className="max-w-2xl mx-auto">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <button onClick={() => setShowExitConfirm(true)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100"><X className="w-4 h-4" /></button>
-              <span className="text-xs text-text-secondary">{answeredCount}/{questions.length} dijawab</span>
-            </div>
-            <span className="text-xs font-medium text-text-primary">Soal {currentIdx + 1} dari {questions.length}</span>
-          </div>
-          <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mb-2">
-            <div className="h-full bg-secondary rounded-full transition-all" style={{ width: `${questions.length > 0 ? (answeredCount / questions.length) * 100 : 0}%` }} />
-          </div>
-          {timeLeft > 0 && <TimerBar timeLeft={timeLeft} totalTime={timeLimit} onExpire={() => setPhase("summary")} />}
-        </div>
-      </div>
-
-      <div className="flex-1 flex">
-        <div className="flex-1 p-4 max-w-2xl mx-auto w-full">
-          {currentQuestion && (
-            <QuestionCard question={currentQuestion} index={currentIdx}
-              answer={answers[currentQuestion.id] || emptyAnswer()}
-              onAnswer={handleAnswer} onFlag={handleFlag} />
+      {/* Header */}
+      <div className="bg-white border-b px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+        <button onClick={() => setShowExitConfirm(true)} className="p-2 hover:bg-gray-100 rounded-lg shrink-0">
+          <X className="w-5 h-5 text-text-secondary" />
+        </button>
+        <div className="flex-1 min-w-0">
+          {timeLeft > 0 ? (
+            <TimerBar timeLeft={timeLeft} totalTime={timeLimit} onExpire={() => setPhase("summary")} />
+          ) : (
+            <p className="text-sm font-medium text-text-primary truncate">Latihan</p>
           )}
         </div>
-        <div className="hidden lg:block w-56 shrink-0 p-4">
-          <div className="bg-white rounded-2xl border p-4 sticky top-24">
-            <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">Navigasi</p>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs text-text-muted hidden sm:block font-medium">
+            {answeredCount}/{questions.length} dijawab
+          </span>
+        </div>
+      </div>
+
+      {/* Body: soal + sidebar desktop */}
+      <div className="flex flex-1 max-w-6xl mx-auto w-full px-4 py-6 gap-6">
+
+        {/* Soal */}
+        <div className="flex-1 min-w-0">
+          {currentQuestion && (
+            <QuestionCard
+              question={currentQuestion}
+              index={currentIdx}
+              answer={answers[currentQuestion.id] || emptyAnswer()}
+              onAnswer={handleAnswer}
+              onFlag={handleFlag}
+            />
+          )}
+        </div>
+
+        {/* Sidebar navigasi — desktop only */}
+        <div className="hidden lg:block w-56 shrink-0">
+          <div className="sticky top-20 bg-white border border-gray-200 rounded-2xl p-4">
+            <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">Navigasi Soal</p>
             <NavGrid questions={questions} currentId={currentId} answers={answers} onJump={setCurrentId} />
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="flex justify-between text-xs text-text-muted mb-2">
+                <span>Dijawab</span>
+                <span className="font-semibold text-emerald-600">{answeredCount}/{questions.length}</span>
+              </div>
+              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-400 rounded-full transition-all"
+                  style={{ width: `${questions.length > 0 ? (answeredCount / questions.length) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+            <Button variant="primary" size="sm" className="w-full mt-4" onClick={() => setPhase("summary")}>
+              <Send className="w-3.5 h-3.5 mr-1.5" />
+              Selesai & Submit
+            </Button>
           </div>
         </div>
       </div>
 
-      <div className="bg-white border-t px-4 py-3 sticky bottom-0 z-30">
-        <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
+      {/* Bottom bar */}
+      <div className="bg-white border-t px-4 py-3 sticky bottom-0 z-10">
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
           <Button variant="outline" size="sm" onClick={() => setCurrentId(questions[currentIdx - 1]?.id)} disabled={isFirst}>
             <ChevronLeft className="w-4 h-4 mr-1" /> Sebelumnya
           </Button>
-          <button onClick={() => setSidebarOpen(true)} className="lg:hidden flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary px-3 py-1.5 rounded-lg hover:bg-gray-100">
+          <button onClick={() => setSidebarOpen(true)} className="lg:hidden flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors">
             <span className="font-medium">{answeredCount}/{questions.length}</span> <span>soal</span>
           </button>
           <div className="hidden lg:block" />
@@ -330,13 +402,14 @@ export default function LatihanPlayPage() {
               Selesai <Send className="w-3.5 h-3.5 ml-1.5" />
             </Button>
           ) : (
-            <Button variant="primary" size="sm" onClick={() => setCurrentId(questions[currentIdx + 1]?.id)}>
+            <Button variant="outline" size="sm" onClick={() => setCurrentId(questions[currentIdx + 1]?.id)}>
               Berikutnya <ChevronRight className="w-4 h-4 ml-1" />
             </Button>
           )}
         </div>
       </div>
 
+      {/* Sidebar mobile */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden" onClick={() => setSidebarOpen(false)}>
           <div className="absolute inset-0 bg-black/40" />

@@ -1,7 +1,6 @@
-const { loginSiswa } = require('../config/moodle');
-const { panggilAPI } = require('../config/moodle');
+const { verifyAccessToken } = require('../services/authService');
 
-// Middleware verifikasi token siswa
+// Middleware verifikasi JWT lokal
 async function authMiddleware(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -11,44 +10,37 @@ async function authMiddleware(req, res, next) {
     const token = authHeader.split(' ')[1];
 
     try {
-        // Verifikasi token ke Moodle
-        const siteInfo = await panggilAPIWithToken(token, 'core_webservice_get_site_info', {});
-
-        // Ambil role dari Moodle
-        const { getRoleUser } = require('../config/moodle');
-        const role = await getRoleUser(siteInfo.userid);
-
+        const payload = verifyAccessToken(token);
         req.user = {
-            id: siteInfo.userid,
-            username: siteInfo.username,
-            nama: siteInfo.fullname,
-            role,
-            token
+            id: payload.sub || payload.id,
+            username: payload.username,
+            nama: payload.nama || payload.name,
+            role: payload.role,
+            email: payload.email
         };
         next();
     } catch (err) {
-        return res.status(401).json({ error: 'Token tidak valid atau sudah expired' });
+        if (err.name === 'TokenExpiredError') {
+            return res.status(401).json({ error: 'Token sudah expired', code: 'TOKEN_EXPIRED' });
+        }
+        return res.status(401).json({ error: 'Token tidak valid' });
     }
 }
 
-// Panggil Moodle API dengan token spesifik (bukan admin token)
-async function panggilAPIWithToken(token, fungsi, parameter = {}) {
-    const axios = require('axios');
-    const response = await axios.get(process.env.MOODLE_URL, {
-        params: {
-            wstoken: token,
-            wsfunction: fungsi,
-            moodlewsrestformat: 'json',
-            ...parameter
-        },
-        timeout: 10000
-    });
-
-    if (response.data && response.data.exception) {
-        throw new Error(response.data.message);
-    }
-
-    return response.data;
+// Middleware cek role — gunakan setelah authMiddleware
+// Contoh: requireRole('admin'), requireRole('admin', 'guru')
+function requireRole(...roles) {
+    return (req, res, next) => {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Tidak terautentikasi' });
+        }
+        if (!roles.includes(req.user.role)) {
+            return res.status(403).json({
+                error: `Akses ditolak. Diperlukan role: ${roles.join(' atau ')}`
+            });
+        }
+        next();
+    };
 }
 
-module.exports = { authMiddleware };
+module.exports = { authMiddleware, requireRole };

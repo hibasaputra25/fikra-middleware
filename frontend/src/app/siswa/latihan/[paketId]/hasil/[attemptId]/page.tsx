@@ -8,6 +8,7 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import { ArrowLeft, CheckCircle, XCircle, MessageCircle, RotateCcw } from "lucide-react";
+import { safeHtml } from "@/lib/sanitize";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
@@ -106,7 +107,7 @@ export default function LatihanHasilPage() {
             <div className="px-5 py-5">
               <div
                 className={cn("text-sm text-text-primary leading-7", "[&_p]:mb-3 [&_p:last-child]:mb-0", "[&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2", "[&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-3", "[&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-3")}
-                dangerouslySetInnerHTML={{ __html: q.content }}
+                dangerouslySetInnerHTML={safeHtml(q.content)}
               />
             </div>
 
@@ -132,7 +133,7 @@ export default function LatihanHasilPage() {
                       )}>
                         {String.fromCharCode(65 + i)}
                       </span>
-                      <span className="flex-1 leading-relaxed" dangerouslySetInnerHTML={{ __html: opt.content }} />
+                      <span className="flex-1 leading-relaxed" dangerouslySetInnerHTML={safeHtml(opt.content)} />
                       {isCorrect && <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />}
                       {isSelected && !isCorrect && <XCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
                     </div>
@@ -147,7 +148,7 @@ export default function LatihanHasilPage() {
                 <p className="text-xs font-semibold text-blue-600 mb-2 uppercase tracking-wide">Pembahasan</p>
                 <div
                   className="text-sm text-text-primary leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0"
-                  dangerouslySetInnerHTML={{ __html: q.explanation }}
+                  dangerouslySetInnerHTML={safeHtml(q.explanation)}
                 />
               </div>
             )}

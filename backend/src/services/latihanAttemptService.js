@@ -32,14 +32,10 @@ async function startAttempt(paketId, userId) {
     );
     if (!paket) throw new Error('Paket tidak ditemukan');
 
-    const dueAt = paket.duration_minutes
-        ? new Date(Date.now() + paket.duration_minutes * 60 * 1000)
-        : null;
-
     const [result] = await pool.execute(
         `INSERT INTO latihan_attempts (paket_id, user_id, status, started_at, due_at)
-         VALUES (?, ?, 'in_progress', NOW(), ?)`,
-        [paketId, userId, dueAt ? dueAt.toISOString().slice(0, 19).replace('T', ' ') : null]
+         VALUES (?, ?, 'in_progress', NOW(), IF(? IS NULL, NULL, DATE_ADD(NOW(), INTERVAL ? MINUTE)))`,
+        [paketId, userId, paket.duration_minutes || null, paket.duration_minutes || null]
     );
     const attemptId = result.insertId;
 

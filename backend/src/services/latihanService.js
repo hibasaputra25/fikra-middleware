@@ -16,10 +16,6 @@ async function getPaketByKategori(userId = null) {
     const params = [];
 
     if (userId) {
-        // Tampilkan paket yang:
-        // 1. Dibuat oleh guru yang mengajar siswa ini
-        // 2. ATAU dibuat oleh admin (role admin)
-        // 3. ATAU created_by IS NULL (paket lama tanpa pemilik)
         whereExtra = `
             AND (
                 lp.created_by IS NULL
@@ -45,6 +41,30 @@ async function getPaketByKategori(userId = null) {
         ORDER BY c.sort_order ASC, lp.sort_order ASC
     `, params);
 
+    // Ambil semua attempt in_progress milik user sekaligus (1 query)
+    let activeAttemptMap = {};
+    if (userId && rows.length > 0) {
+        const paketIds = rows.map(r => r.id);
+        const placeholders = paketIds.map(() => '?').join(',');
+        const [activeAttempts] = await pool.execute(
+            `SELECT id, paket_id, started_at, due_at
+             FROM latihan_attempts
+             WHERE paket_id IN (${placeholders}) AND user_id = ? AND status = 'in_progress'
+             ORDER BY id DESC`,
+            [...paketIds, userId]
+        );
+        // Ambil hanya yang belum expired, satu per paket
+        const now = new Date();
+        for (const a of activeAttempts) {
+            if (activeAttemptMap[a.paket_id]) continue; // sudah ada (ambil yang terbaru)
+            if (a.due_at && now > new Date(a.due_at)) continue; // skip expired
+            const time_left_seconds = a.due_at
+                ? Math.max(0, Math.floor((new Date(a.due_at) - now) / 1000))
+                : null;
+            activeAttemptMap[a.paket_id] = { id: a.id, started_at: a.started_at, time_left_seconds };
+        }
+    }
+
     const grouped = {};
     for (const row of rows) {
         const key = row.category_id || 'uncategorized';
@@ -67,7 +87,8 @@ async function getPaketByKategori(userId = null) {
             shuffle_questions: !!row.shuffle_questions,
             shuffle_options: !!row.shuffle_options,
             difficulty: row.difficulty,
-            sort_order: row.sort_order
+            sort_order: row.sort_order,
+            active_attempt: activeAttemptMap[row.id] || null
         });
     }
     return Object.values(grouped);

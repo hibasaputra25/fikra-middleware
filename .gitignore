@@ -18,6 +18,10 @@ backend/uploads/questions/*
 !backend/uploads/questions/.gitkeep
 backend/uploads/.gitkeep
 
+# Uploads materi (file PDF, DOCX, dll yang di-upload guru)
+backend/uploads/materi/*
+!backend/uploads/materi/.gitkeep
+
 # Sisa ekstraksi .mbz (temporary extraction directories)
 mbz_extracted/
 

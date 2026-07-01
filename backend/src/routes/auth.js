@@ -3,7 +3,8 @@ const router  = express.Router();
 const {
     register, login, refreshAccessToken,
     logout, getMe, updateProfile, changePassword,
-    verifyEmail, resendVerification
+    verifyEmail, resendVerification,
+    forgotPassword, resetPassword
 } = require('../services/authService');
 const { authMiddleware } = require('../middleware/auth');
 
@@ -189,6 +190,39 @@ router.put('/change-password', authMiddleware, async (req, res, next) => {
         res.json({ success: true, message: 'Password berhasil diubah' });
     } catch (err) {
         const userErrors = ['salah', 'wajib', 'minimal'];
+        if (userErrors.some(e => err.message.includes(e))) {
+            return res.status(400).json({ error: err.message });
+        }
+        next(err);
+    }
+});
+
+// =====================================================================
+// POST /api/auth/forgot-password
+// =====================================================================
+router.post('/forgot-password', async (req, res, next) => {
+    try {
+        const { email } = req.body;
+        const result = await forgotPassword({ email });
+        res.json(result);
+    } catch (err) {
+        if (err.message.includes('wajib')) {
+            return res.status(400).json({ error: err.message });
+        }
+        next(err);
+    }
+});
+
+// =====================================================================
+// POST /api/auth/reset-password
+// =====================================================================
+router.post('/reset-password', async (req, res, next) => {
+    try {
+        const { token, new_password } = req.body;
+        const result = await resetPassword({ token, new_password });
+        res.json(result);
+    } catch (err) {
+        const userErrors = ['wajib', 'minimal', 'tidak valid', 'kadaluarsa'];
         if (userErrors.some(e => err.message.includes(e))) {
             return res.status(400).json({ error: err.message });
         }

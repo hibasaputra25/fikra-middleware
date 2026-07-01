@@ -127,6 +127,10 @@ export const authAPI = {
     api.put("/auth/profile", data),
   changePassword: (data: { old_password: string; new_password: string }) =>
     api.put("/auth/change-password", data),
+  forgotPassword: (email: string) =>
+    api.post<{ message: string }>("/auth/forgot-password", { email }),
+  resetPassword: (data: { token: string; new_password: string }) =>
+    api.post<{ message: string }>("/auth/reset-password", data),
   adminResetPassword: (userId: number, new_password: string) =>
     api.put(`/auth/admin/reset-password/${userId}`, { new_password }),
   verifyEmail: (token: string) =>
@@ -182,7 +186,9 @@ export interface TryoutSummary {
   section_count: number;
   total_questions: number;
   created_at: string;
-  description?: string | null;
+  active_attempt?: { id: number; started_at: string; time_left_seconds: number | null } | null;
+  completed_count?: number;
+  best_score?: number | null;
 }
 
 // Extended types for detail view
@@ -248,6 +254,13 @@ export interface TryoutAttemptsResponse {
 export const quizAPI = {
   getAll: () => api.get("/quizzes"),
   getById: (id: number) => api.get(`/quizzes/${id}`),
+  getActiveAttempt: (id: number) => api.get<{
+    active: boolean;
+    attempt: { id: number; started_at: string; due_at: string | null; time_left_seconds: number | null } | null;
+    completed_count: number;
+    best_score: number | null;
+    last_finished: string | null;
+  }>(`/quizzes/${id}/active-attempt`),
 
   // Admin — list
   adminGetAll: () =>
@@ -731,6 +744,11 @@ export interface LatihanPaket {
   is_active?: number;
   question_count?: number;
   created_at?: string;
+  active_attempt?: {
+    id: number;
+    started_at: string;
+    time_left_seconds: number | null;
+  } | null;
 }
 
 export interface LatihanKategori {
@@ -778,6 +796,13 @@ export const latihanAPI = {
   // Siswa
   getAll: () => api.get<{ data: LatihanKategori[] }>('/latihan'),
   getPaket: (paketId: number) => api.get<LatihanPaket & { questions: LatihanQuestion[] }>(`/latihan/paket/${paketId}`),
+  getActiveAttempt: (paketId: number) => api.get<{
+    active: boolean;
+    attempt: { id: number; started_at: string; due_at: string | null; time_left_seconds: number | null } | null;
+    completed_count: number;
+    best_score: number | null;
+    last_finished: string | null;
+  }>(`/latihan/paket/${paketId}/active-attempt`),
   start: (paketId: number) => api.post<{ attempt: LatihanAttempt; answers: unknown[]; is_new: boolean }>(`/latihan/paket/${paketId}/start`),
   saveAnswer: (attemptId: number, data: { question_id: number; selected_option_ids?: number[]; answer_text?: string; is_flagged?: boolean }) =>
     api.post(`/latihan/attempt/${attemptId}/answer`, data),
@@ -913,6 +938,26 @@ export const guruAPI = {
     api.get<{ data: Array<{ id: number; nama: string; username: string; email: string }>; total: number }>(`/students/guru/${guruId}/siswa`),
   setSiswa: (guruId: number, siswa_ids: number[]) =>
     api.put<{ data: Array<{ id: number; nama: string; username: string }>; total: number }>(`/students/guru/${guruId}/siswa`, { siswa_ids }),
+
+  // Progress detail satu siswa
+  getProgress: (siswaId: number) =>
+    api.get<{
+      siswa: { id: number; nama: string; email: string; username: string; last_login_at: string | null; created_at: string };
+      jenjang: Array<{ kurikulum_id: number; kurikulum_name: string; kurikulum_code: string }>;
+      tryout: {
+        summary: { total_attempts: number; avg_score: number; best_score: number; worst_score: number };
+        tren: Array<{ finished_at: string; total_score: number; tryout_name: string }>;
+        attempts: Array<{ id: number; tryout_name: string; total_score: number; finished_at: string; time_spent_seconds: number; score_per_section: Record<string, unknown> }>;
+      };
+      latihan: {
+        attempts: Array<{ id: number; paket_nama: string; total_score: number; total_correct: number; total_wrong: number; finished_at: string; time_spent_seconds: number }>;
+      };
+      absensi: {
+        summary: { total_sesi: number; hadir: number; izin: number; sakit: number; alfa: number };
+        detail: Array<{ status: string; catatan: string | null; tanggal: string; mapel: string; jenjang: string }>;
+      };
+      catatan: Array<{ kondisi: string; fokus: string; catatan: string | null; tanggal: string; mapel: string; nama_guru: string }>;
+    }>(`/students/${siswaId}/progress`),
 };
 
 // Siswa jenjang + guru management
@@ -927,7 +972,33 @@ export const siswaAPI = {
     api.put<{ data: Array<{ id: number; nama: string; username: string }> }>(`/students/${siswaId}/guru`, { guru_ids }),
 };
 
-// Uploads
+// Notifications
+export const notificationAPI = {
+  getAll: (offset = 0) =>
+    api.get<{ data: Array<{ id: number; type: string; title: string; body: string | null; url: string | null; is_read: number; read_at: string | null; created_at: string }>; total: number }>(`/notifications?offset=${offset}`),
+  getUnreadCount: () =>
+    api.get<{ count: number }>('/notifications/unread-count'),
+  markRead: (id: number) =>
+    api.put(`/notifications/${id}/read`),
+  markAllRead: () =>
+    api.put('/notifications/read-all'),
+};
+
+// Announcements
+export const announcementAPI = {
+  getAll: () =>
+    api.get<{ data: Array<{ id: number; title: string; content: string; target_role: string; is_active: number; created_at: string; created_by_nama: string }>; total: number }>('/announcements'),
+  getById: (id: number) =>
+    api.get<{ id: number; title: string; content: string; target_role: string; created_at: string; created_by_nama: string }>(`/announcements/${id}`),
+  getManage: () =>
+    api.get<{ data: Array<{ id: number; title: string; content: string; target_role: string; is_active: number; created_at: string; created_by_nama: string }>; total: number }>('/announcements/manage'),
+  create: (data: { title: string; content: string; target_role?: string }) =>
+    api.post('/announcements', data),
+  update: (id: number, data: { title?: string; content?: string; target_role?: string; is_active?: number }) =>
+    api.put(`/announcements/${id}`, data),
+  remove: (id: number) =>
+    api.delete(`/announcements/${id}`),
+};
 export const uploadAPI = {
   questionImage: (file: File) => {
     const fd = new FormData();
@@ -940,7 +1011,147 @@ export const uploadAPI = {
   },
   removeQuestionImage: (filename: string) =>
     api.delete(`/uploads/question-image/${filename}`),
+
+  materiFile: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.post<{ url: string; filename: string; original_name: string; size: number; mime: string }>(
+      "/uploads/materi",
+      fd,
+      { headers: { "Content-Type": "multipart/form-data" } }
+    );
+  },
+  removeMateriFile: (filename: string) =>
+    api.delete(`/uploads/materi/${filename}`),
 };
+
+// =====================================================================
+// Materi (Learning Materials)
+// =====================================================================
+export interface Materi {
+  id: number;
+  judul: string;
+  deskripsi: string | null;
+  jenis: "file" | "video_url" | "link";
+  file_url: string | null;
+  video_url: string | null;
+  link_url: string | null;
+  mime_type: string | null;
+  file_size: number | null;
+  original_name: string | null;
+  kurikulum_id: number;
+  kurikulum_name: string;
+  kurikulum_code: string;
+  subtes_id: number | null;
+  subtes_name: string | null;
+  subtes_code: string | null;
+  created_by: number;
+  created_by_nama: string;
+  created_by_role: string;
+  is_active: number;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MateriFormData {
+  judul: string;
+  deskripsi?: string;
+  jenis: "file" | "video_url" | "link";
+  file_url?: string;
+  video_url?: string;
+  link_url?: string;
+  mime_type?: string;
+  file_size?: number;
+  original_name?: string;
+  kurikulum_id: number;
+  subtes_id?: number | null;
+  sort_order?: number;
+}
+
+export const materiAPI = {
+  // Untuk siswa — filter otomatis by jenjang
+  list: (params?: { kurikulum_id?: number; subtes_id?: number; jenis?: string }) =>
+    api.get<{ total: number; data: Materi[] }>("/materi", { params }),
+
+  // Untuk guru/admin — kelola materi sendiri
+  manage: (params?: { kurikulum_id?: number; subtes_id?: number }) =>
+    api.get<{ total: number; data: Materi[] }>("/materi/manage", { params }),
+
+  getById: (id: number) =>
+    api.get<Materi>(`/materi/${id}`),
+
+  create: (data: MateriFormData) =>
+    api.post<Materi>("/materi", data),
+
+  update: (id: number, data: Partial<MateriFormData> & { is_active?: number }) =>
+    api.put<Materi>(`/materi/${id}`, data),
+
+  delete: (id: number) =>
+    api.delete<{ success: boolean }>(`/materi/${id}`),
+};
+
+// =====================================================================
+// Export API
+// =====================================================================
+export interface RaporSiswa {
+  siswa: {
+    id: number; nama: string; username: string; email: string;
+    created_at: string; last_login_at: string | null;
+  };
+  jenjang: Array<{ kurikulum_id: number; kurikulum_name: string; kurikulum_code: string }>;
+  tryout: {
+    summary: { total_attempts: number; avg_score: number; best_score: number; worst_score: number };
+    attempts: Array<{
+      id: number; tryout_name: string; tryout_type: string;
+      total_score: number; score_per_section: Record<string, number> | string | null;
+      time_spent_seconds: number; finished_at: string;
+    }>;
+  };
+  latihan: {
+    total: number;
+    attempts: Array<{
+      id: number; paket_nama: string; total_score: number;
+      total_correct: number; total_wrong: number;
+      time_spent_seconds: number; finished_at: string;
+    }>;
+  };
+  absensi: {
+    summary: { total_sesi: number; hadir: number; izin: number; sakit: number; alfa: number };
+    detail: Array<{ status: string; catatan: string | null; tanggal: string; mapel: string; jenjang: string }>;
+  };
+  catatan_guru: Array<{
+    kondisi: string; fokus: string; catatan: string | null;
+    tanggal: string; mapel: string; nama_guru: string;
+  }>;
+  generated_at: string;
+}
+
+export const exportAPI = {
+  // Download Excel nilai tryout — response adalah blob
+  nilaiTryout: (tryoutId: number) =>
+    api.get(`/export/tryout/${tryoutId}/nilai`, { responseType: 'blob' }),
+
+  // JSON rapor siswa — untuk dirender di halaman rapor
+  raporSiswa: (siswaId: number) =>
+    api.get<RaporSiswa>(`/export/siswa/${siswaId}/rapor`),
+
+  // Download Excel absensi — response adalah blob
+  absensi: (params?: { tanggal_dari?: string; tanggal_sampai?: string; guru_id?: number; jenjang?: string }) =>
+    api.get('/export/absensi', { params, responseType: 'blob' }),
+};
+
+// Helper untuk trigger download blob dari axios response
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob);
+  const a   = document.createElement('a');
+  a.href    = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
 
 // Helper untuk build absolute URL untuk gambar yang di-serve dari backend
 export const ASSET_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api").replace(/\/api\/?$/, "");

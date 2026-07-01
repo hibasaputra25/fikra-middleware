@@ -6,6 +6,7 @@ import AuthGuard from "@/components/layout/AuthGuard";
 const navItems = [
   { label: "Dashboard", href: "/admin/dashboard" },
   { label: "Users", href: "/admin/users" },
+  { label: "Pengumuman", href: "/admin/pengumuman" },
   { label: "Kategori", href: "/admin/collections" },
   { label: "Bank Soal", href: "/admin/questions" },
   { label: "Latihan", href: "/admin/latihan" },
@@ -18,7 +19,7 @@ const navItems = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard allowedRoles={["admin"]}>
-      <Navbar items={navItems} accent="admin" />
+      <Navbar items={navItems} accent="admin" maxVisible={6} />
       {children}
     </AuthGuard>
   );

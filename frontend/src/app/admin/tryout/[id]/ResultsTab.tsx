@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { quizAPI, type TryoutAttemptsResponse } from "@/lib/api";
+import { quizAPI, exportAPI, downloadBlob, type TryoutAttemptsResponse } from "@/lib/api";
 import Badge from "@/components/ui/Badge";
-import { RefreshCw, Users } from "lucide-react";
+import AlertModal, { useAlertModal } from "@/components/ui/AlertModal";
+import { RefreshCw, Users, Download } from "lucide-react";
 import { cn, formatDateTime } from "@/lib/utils";
 
 const ATTEMPT_STATUS: Record<string, { label: string; variant: "success" | "warning" | "neutral" | "danger" }> = {
@@ -20,10 +21,25 @@ function formatDuration(seconds: number) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-export default function ResultsTab({ tryoutId }: { tryoutId: number }) {
-  const [data, setData]           = useState<TryoutAttemptsResponse | null>(null);
-  const [loading, setLoading]     = useState(true);
+export default function ResultsTab({ tryoutId, tryoutName }: { tryoutId: number; tryoutName?: string }) {
+  const [data, setData]                 = useState<TryoutAttemptsResponse | null>(null);
+  const [loading, setLoading]           = useState(true);
   const [filterStatus, setFilterStatus] = useState("");
+  const [exporting, setExporting]       = useState(false);
+  const { alertProps, showAlert }       = useAlertModal();
+
+  const handleExportNilai = async () => {
+    setExporting(true);
+    try {
+      const res = await exportAPI.nilaiTryout(tryoutId);
+      const safeName = (tryoutName || `tryout_${tryoutId}`).replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_");
+      downloadBlob(res.data as Blob, `Nilai_${safeName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch {
+      showAlert("Gagal mengexport nilai. Coba lagi.", "error", "Gagal Export");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -65,8 +81,8 @@ export default function ResultsTab({ tryoutId }: { tryoutId: number }) {
         </div>
       )}
 
-      {/* Filter + refresh */}
-      <div className="flex items-center gap-2">
+      {/* Filter + refresh + export */}
+      <div className="flex items-center gap-2 flex-wrap">
         <select
           value={filterStatus}
           onChange={e => setFilterStatus(e.target.value)}
@@ -86,6 +102,16 @@ export default function ResultsTab({ tryoutId }: { tryoutId: number }) {
           <RefreshCw className="w-4 h-4" />
         </button>
         <span className="text-xs text-text-muted ml-1">{filtered.length} peserta</span>
+        <div className="ml-auto">
+          <button
+            onClick={handleExportNilai}
+            disabled={exporting || (data?.submitted ?? 0) === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            {exporting ? "Mengexport..." : "Export Nilai (.xlsx)"}
+          </button>
+        </div>
       </div>
 
       {/* Table */}
@@ -156,6 +182,7 @@ export default function ResultsTab({ tryoutId }: { tryoutId: number }) {
           </div>
         </div>
       )}
+      <AlertModal {...alertProps} />
     </div>
   );
 }

@@ -1,19 +1,35 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { studentAPI, quizAPI } from "@/lib/api";
+import { studentAPI, quizAPI, exportAPI, downloadBlob } from "@/lib/api";
 import Container from "@/components/layout/Container";
 import StatCard from "@/components/ui/StatCard";
 import { Card, CardTitle } from "@/components/ui/Card";
-import { Users, FileText, Database, Activity } from "lucide-react";
+import AlertModal, { useAlertModal } from "@/components/ui/AlertModal";
+import { Users, FileText, Database, Activity, Download } from "lucide-react";
 
 export default function AdminDashboard() {
+  const { alertProps, showAlert } = useAlertModal();
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalQuizzes: 0,
     activeQuizzes: 0,
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]       = useState(true);
+  const [exportingAbsensi, setExportingAbsensi] = useState(false);
+
+  const handleExportAbsensi = async () => {
+    setExportingAbsensi(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const res = await exportAPI.absensi({ tanggal_sampai: today });
+      downloadBlob(res.data as Blob, `Absensi_Semua_${today}.xlsx`);
+    } catch {
+      showAlert("Gagal mengexport absensi. Coba lagi.", "error", "Gagal Export");
+    } finally {
+      setExportingAbsensi(false);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -57,7 +73,7 @@ export default function AdminDashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Users Synced" value={stats.totalUsers} icon={Users} />
+        <StatCard label="Total Siswa" value={stats.totalUsers} icon={Users} />
         <StatCard label="Quizzes Mapped" value={stats.totalQuizzes} icon={FileText} />
         <StatCard label="Active Quizzes" value={stats.activeQuizzes} icon={Activity} />
         <StatCard
@@ -68,7 +84,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Info Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         <Card>
           <CardTitle>Moodle Connection</CardTitle>
           <div className="mt-3 space-y-2">
@@ -112,6 +128,23 @@ export default function AdminDashboard() {
           </div>
         </Card>
       </div>
+
+      {/* Export Data */}
+      <Card>
+        <CardTitle>Export Data</CardTitle>
+        <p className="text-sm text-text-secondary mt-1 mb-4">Download rekap data platform dalam format Excel.</p>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={handleExportAbsensi}
+            disabled={exportingAbsensi}
+            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            {exportingAbsensi ? "Mengexport..." : "Export Absensi (.xlsx)"}
+          </button>
+        </div>
+      </Card>
+      <AlertModal {...alertProps} />
     </Container>
   );
 }

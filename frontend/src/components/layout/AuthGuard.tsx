@@ -9,6 +9,12 @@ interface AuthGuardProps {
   allowedRoles?: ("siswa" | "guru" | "admin")[];
 }
 
+const ROLE_HOME: Record<string, string> = {
+  siswa: "/siswa/dashboard",
+  guru:  "/guru/dashboard",
+  admin: "/admin/dashboard",
+};
+
 export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
   const { user, isLoading, loadFromStorage } = useAuthStore();
   const router = useRouter();
@@ -25,7 +31,9 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
 
   useEffect(() => {
     if (!isLoading && user && allowedRoles && !allowedRoles.includes(user.role || "siswa")) {
-      router.replace("/login");
+      // Redirect ke dashboard sesuai role, bukan ke /login
+      const home = ROLE_HOME[user.role || "siswa"] ?? "/login";
+      router.replace(home);
     }
   }, [isLoading, user, allowedRoles, router]);
 

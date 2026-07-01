@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { quizAPI, type TryoutSummary } from "@/lib/api";
 import Link from "next/link";
-import { Clock, FileText, ArrowRight, CalendarClock } from "lucide-react";
+import { Clock, FileText, ArrowRight, CalendarClock, RotateCcw, CheckCircle } from "lucide-react";
 import { cn, formatDateTime } from "@/lib/utils";
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; badge: string }> = {
@@ -34,8 +34,8 @@ export default function TryoutListPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered     = filter === "all" ? quizzes : quizzes.filter(q => q.status_jadwal === filter);
-  const openCount    = quizzes.filter(q => q.status_jadwal === "open").length;
+  const filtered      = filter === "all" ? quizzes : quizzes.filter(q => q.status_jadwal === filter);
+  const openCount     = quizzes.filter(q => q.status_jadwal === "open").length;
   const upcomingCount = quizzes.filter(q => q.status_jadwal === "upcoming").length;
 
   if (loading) return (
@@ -56,77 +56,102 @@ export default function TryoutListPage() {
             ) : upcomingCount > 0 ? (
               <span>{upcomingCount} tryout akan segera dibuka</span>
             ) : (
-              <span>Tidak ada tryout aktif saat ini</span>
+              <span>Belum ada tryout aktif saat ini</span>
             )}
           </p>
         </div>
       </div>
 
-      {/* Filter pills */}
-      <div className="flex gap-2 mb-6 flex-wrap">
+      {/* Filter tabs */}
+      <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit">
         {[
-          { key: "all",     label: `Semua (${quizzes.length})` },
-          { key: "open",    label: `Berlangsung (${openCount})` },
-          { key: "upcoming",label: `Segera (${upcomingCount})` },
-          { key: "closed",  label: `Selesai (${quizzes.filter(q => q.status_jadwal === "closed").length})` },
-        ].map(pill => (
+          { key: "all",     label: "Semua" },
+          { key: "open",    label: "Berlangsung" },
+          { key: "upcoming",label: "Segera" },
+          { key: "closed",  label: "Selesai" },
+        ].map(f => (
           <button
-            key={pill.key}
-            onClick={() => setFilter(pill.key)}
+            key={f.key}
+            onClick={() => setFilter(f.key)}
             className={cn(
-              "px-4 py-1.5 rounded-full text-sm font-medium border transition-colors",
-              filter === pill.key
-                ? "bg-primary text-white border-primary"
-                : "bg-white text-text-secondary border-border hover:border-primary/40"
+              "px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+              filter === f.key
+                ? "bg-white text-text-primary shadow-sm"
+                : "text-text-muted hover:text-text-secondary"
             )}
           >
-            {pill.label}
+            {f.label}
           </button>
         ))}
       </div>
 
-      {/* List */}
       {filtered.length === 0 ? (
-        <div className="bg-white border border-border rounded-xl px-6 py-16 text-center">
-          <p className="text-sm text-text-muted">Tidak ada tryout yang sesuai filter.</p>
+        <div className="text-center py-16 text-sm text-text-muted">
+          Tidak ada tryout dalam kategori ini.
         </div>
       ) : (
-        <div className="space-y-3">
-          {filtered.map(quiz => (
-            <Link
-              key={quiz.id}
-              href={`/siswa/tryout/${quiz.id}`}
-              className="flex items-start justify-between gap-4 bg-white border border-border rounded-xl px-5 py-4 hover:border-primary/40 hover:shadow-sm transition-all group"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <StatusBadge status={quiz.status_jadwal || quiz.status} />
-                </div>
-                <h2 className="text-base font-semibold text-text-primary group-hover:text-primary transition-colors truncate">
-                  {quiz.name}
-                </h2>
-                <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-text-muted">
-                  <span className="flex items-center gap-1">
-                    <FileText className="w-3.5 h-3.5" />
-                    {Number(quiz.total_questions) || 0} soal
-                  </span>
-                  {quiz.duration_minutes && (
+        <div className="space-y-2">
+          {filtered.map(quiz => {
+            const isActive    = !!quiz.active_attempt;
+            const isDone      = (quiz.completed_count ?? 0) > 0;
+
+            return (
+              <Link
+                key={quiz.id}
+                href={`/siswa/tryout/${quiz.id}`}
+                className="group flex items-start gap-4 p-4 rounded-xl border transition-all hover:shadow-sm"
+                style={{
+                  borderColor: isActive ? '#fbbf24' : isDone ? '#d1fae5' : undefined,
+                  backgroundColor: isActive ? '#fffbeb' : isDone ? '#f0fdf4' : 'white',
+                }}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <StatusBadge status={quiz.status_jadwal || 'closed'} />
+                    {isActive && (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        Sedang dikerjakan
+                      </span>
+                    )}
+                    {!isActive && isDone && (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                        <CheckCircle className="w-3 h-3" />
+                        Selesai {quiz.completed_count}x
+                        {quiz.best_score != null && ` · Skor ${quiz.best_score}`}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-sm font-semibold text-text-primary group-hover:text-primary transition-colors mb-1.5">
+                    {quiz.name}
+                  </h3>
+                  <div className="flex items-center gap-3 text-xs text-text-muted flex-wrap">
                     <span className="flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5" />
-                      {quiz.duration_minutes} menit
+                      <FileText className="w-3.5 h-3.5" />
+                      {Number(quiz.total_questions) || 0} soal
                     </span>
-                  )}
-                  {quiz.end_at && (
-                    <span className="flex items-center gap-1">
-                      <CalendarClock className="w-3.5 h-3.5" />
-                      Tutup {formatDateTime(quiz.end_at)}
-                    </span>
-                  )}
+                    {quiz.duration_minutes && (
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" />
+                        {quiz.duration_minutes} menit
+                      </span>
+                    )}
+                    {quiz.end_at && (
+                      <span className="flex items-center gap-1">
+                        <CalendarClock className="w-3.5 h-3.5" />
+                        Tutup {formatDateTime(quiz.end_at)}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <ArrowRight className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors shrink-0 mt-1" />
-            </Link>
-          ))}
+                {isActive ? (
+                  <RotateCcw className="w-4 h-4 text-amber-500 shrink-0 mt-1" />
+                ) : (
+                  <ArrowRight className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors shrink-0 mt-1" />
+                )}
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

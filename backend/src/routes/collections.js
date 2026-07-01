@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const collectionService = require('../services/collectionService');
+const { authMiddleware, requireRole } = require('../middleware/auth');
+
+// Semua route collections hanya untuk guru dan admin
+router.use(authMiddleware, requireRole('guru', 'admin'));
 
 router.get('/', async (req, res, next) => {
     try {

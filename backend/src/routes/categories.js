@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const categoryService = require('../services/categoryService');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, requireRole } = require('../middleware/auth');
 
 // GET /api/categories?level=subtes&parent_id=1&tree=1&kurikulum_id=11
 router.get('/', async (req, res, next) => {
@@ -52,16 +52,16 @@ router.get('/guru/kurikulum', authMiddleware, async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-// GET /api/categories/guru/:userId/kurikulum — kurikulum guru tertentu (admin)
-router.get('/guru/:userId/kurikulum', async (req, res, next) => {
+// GET /api/categories/guru/:userId/kurikulum — kurikulum guru tertentu (admin only)
+router.get('/guru/:userId/kurikulum', authMiddleware, requireRole('admin'), async (req, res, next) => {
     try {
         const data = await categoryService.getKurikulumByGuru(parseInt(req.params.userId));
         res.json({ data });
     } catch (err) { next(err); }
 });
 
-// PUT /api/categories/guru/:userId/kurikulum — set kurikulum untuk guru (admin)
-router.put('/guru/:userId/kurikulum', async (req, res, next) => {
+// PUT /api/categories/guru/:userId/kurikulum — set kurikulum untuk guru (admin only)
+router.put('/guru/:userId/kurikulum', authMiddleware, requireRole('admin'), async (req, res, next) => {
     try {
         const { kurikulum_ids } = req.body;
         await categoryService.setKurikulumGuru(parseInt(req.params.userId), kurikulum_ids || []);
@@ -81,8 +81,8 @@ router.get('/:id', async (req, res, next) => {
     }
 });
 
-// POST /api/categories
-router.post('/', async (req, res, next) => {
+// POST /api/categories — hanya guru & admin
+router.post('/', authMiddleware, requireRole('guru', 'admin'), async (req, res, next) => {
     try {
         const cat = await categoryService.create(req.body);
         res.status(201).json(cat);
@@ -94,8 +94,8 @@ router.post('/', async (req, res, next) => {
     }
 });
 
-// PUT /api/categories/:id
-router.put('/:id', async (req, res, next) => {
+// PUT /api/categories/:id — hanya guru & admin
+router.put('/:id', authMiddleware, requireRole('guru', 'admin'), async (req, res, next) => {
     try {
         const cat = await categoryService.update(parseInt(req.params.id), req.body);
         res.json(cat);
@@ -104,8 +104,8 @@ router.put('/:id', async (req, res, next) => {
     }
 });
 
-// DELETE /api/categories/:id (soft delete)
-router.delete('/:id', async (req, res, next) => {
+// DELETE /api/categories/:id (soft delete) — hanya guru & admin
+router.delete('/:id', authMiddleware, requireRole('guru', 'admin'), async (req, res, next) => {
     try {
         await categoryService.remove(parseInt(req.params.id));
         res.json({ success: true });

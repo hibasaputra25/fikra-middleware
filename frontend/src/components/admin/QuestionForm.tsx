@@ -371,7 +371,14 @@ export default function QuestionForm({ questionId }: QuestionFormProps) {
       };
 
       if (["mcq_single", "mcq_multi", "true_false"].includes(form.type)) {
-        payload.options = form.options.filter((o) => stripHtml(o.content));
+        const validOptions = form.options.filter((o) => stripHtml(o.content));
+        if (validOptions.length < 2) {
+          throw new Error("Minimal 2 pilihan jawaban harus diisi");
+        }
+        if (!validOptions.some((o) => o.is_correct)) {
+          throw new Error("Minimal satu pilihan jawaban harus ditandai sebagai benar");
+        }
+        payload.options = validOptions;
       }
       if (["short_answer", "numeric"].includes(form.type)) {
         payload.answers = form.answers;
